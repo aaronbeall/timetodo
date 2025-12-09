@@ -141,7 +141,7 @@ export default function TaskArcs({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { width: size, height: size }]}>
       <Svg
         width={size}
         height={size}

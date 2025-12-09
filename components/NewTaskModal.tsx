@@ -83,12 +83,12 @@ export default function NewTaskModal({
     value: 'none' | 'daily' | 'weekdays' | 'weekends' | 'custom';
     label: string;
   }> = [
-    { value: 'none', label: 'Once' },
-    { value: 'daily', label: 'Daily' },
-    { value: 'weekdays', label: 'Weekdays' },
-    { value: 'weekends', label: 'Weekends' },
-    { value: 'custom', label: 'Custom' },
-  ];
+      { value: 'none', label: 'Once' },
+      { value: 'daily', label: 'Daily' },
+      { value: 'weekdays', label: 'Weekdays' },
+      { value: 'weekends', label: 'Weekends' },
+      { value: 'custom', label: 'Custom' },
+    ];
 
   const weekDays = [
     { value: 0, label: 'Sun' },
@@ -111,107 +111,107 @@ export default function NewTaskModal({
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.section}>
-          <Text style={styles.label}>Task Name</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Enter task name"
-            placeholderTextColor="#94A3B8"
-          />
-        </View>
+      {/* <ScrollView style={styles.content} showsVerticalScrollIndicator={false}> */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Task Name</Text>
+        <TextInput
+          style={styles.input}
+          value={name}
+          onChangeText={setName}
+          placeholder="Enter task name"
+          placeholderTextColor="#94A3B8"
+        />
+      </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Time Frame</Text>
-          <RadialTimePicker
-            startTime={startTime}
-            endTime={endTime}
-            onChange={handleTimeChange}
-          />
-        </View>
+      <View style={styles.section}>
+        <Text style={styles.label}>Time Frame</Text>
+        <RadialTimePicker
+          startTime={startTime}
+          endTime={endTime}
+          onChange={handleTimeChange}
+        />
+      </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Color</Text>
-          <ColorPicker selectedColor={color} onColorSelect={setColor} />
-        </View>
+      <View style={styles.section}>
+        <Text style={styles.label}>Color</Text>
+        <ColorPicker selectedColor={color} onColorSelect={setColor} />
+      </View>
 
-        <TouchableOpacity
-          style={styles.advancedToggle}
-          onPress={() => setShowAdvanced(!showAdvanced)}>
-          <Text style={styles.advancedToggleText}>Advanced Options</Text>
-          {showAdvanced ? (
-            <ChevronUp size={20} color="#64748B" />
-          ) : (
-            <ChevronDown size={20} color="#64748B" />
-          )}
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.advancedToggle}
+        onPress={() => setShowAdvanced(!showAdvanced)}>
+        <Text style={styles.advancedToggleText}>Advanced Options</Text>
+        {showAdvanced ? (
+          <ChevronUp size={20} color="#64748B" />
+        ) : (
+          <ChevronDown size={20} color="#64748B" />
+        )}
+      </TouchableOpacity>
 
-        {showAdvanced && (
-          <>
-            <View style={styles.section}>
-              <Text style={styles.label}>Repeat</Text>
-              <View style={styles.repeatOptions}>
-                {repeatOptions.map((option) => (
-                  <TouchableOpacity
-                    key={option.value}
+      {showAdvanced && (
+        <>
+          <View style={styles.section}>
+            <Text style={styles.label}>Repeat</Text>
+            <View style={styles.repeatOptions}>
+              {repeatOptions.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.repeatOption,
+                    repeatPattern === option.value &&
+                    styles.repeatOptionActive,
+                  ]}
+                  onPress={() => setRepeatPattern(option.value)}>
+                  <Text
                     style={[
-                      styles.repeatOption,
+                      styles.repeatOptionText,
                       repeatPattern === option.value &&
-                        styles.repeatOptionActive,
+                      styles.repeatOptionTextActive,
+                    ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {repeatPattern === 'custom' && (
+              <View style={styles.weekDays}>
+                {weekDays.map((day) => (
+                  <TouchableOpacity
+                    key={day.value}
+                    style={[
+                      styles.weekDay,
+                      repeatDays.includes(day.value) && styles.weekDayActive,
                     ]}
-                    onPress={() => setRepeatPattern(option.value)}>
+                    onPress={() => toggleRepeatDay(day.value)}>
                     <Text
                       style={[
-                        styles.repeatOptionText,
-                        repeatPattern === option.value &&
-                          styles.repeatOptionTextActive,
+                        styles.weekDayText,
+                        repeatDays.includes(day.value) &&
+                        styles.weekDayTextActive,
                       ]}>
-                      {option.label}
+                      {day.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
+            )}
+          </View>
 
-              {repeatPattern === 'custom' && (
-                <View style={styles.weekDays}>
-                  {weekDays.map((day) => (
-                    <TouchableOpacity
-                      key={day.value}
-                      style={[
-                        styles.weekDay,
-                        repeatDays.includes(day.value) && styles.weekDayActive,
-                      ]}
-                      onPress={() => toggleRepeatDay(day.value)}>
-                      <Text
-                        style={[
-                          styles.weekDayText,
-                          repeatDays.includes(day.value) &&
-                            styles.weekDayTextActive,
-                        ]}>
-                        {day.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+          <View style={styles.section}>
+            <View style={styles.switchRow}>
+              <Text style={styles.label}>Notifications</Text>
+              <Switch
+                value={notificationsEnabled}
+                onValueChange={setNotificationsEnabled}
+                trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
+                thumbColor={notificationsEnabled ? '#3B82F6' : '#F1F5F9'}
+              />
             </View>
-
-            <View style={styles.section}>
-              <View style={styles.switchRow}>
-                <Text style={styles.label}>Notifications</Text>
-                <Switch
-                  value={notificationsEnabled}
-                  onValueChange={setNotificationsEnabled}
-                  trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
-                  thumbColor={notificationsEnabled ? '#3B82F6' : '#F1F5F9'}
-                />
-              </View>
-            </View>
-          </>
-        )}
-      </ScrollView>
+          </View>
+        </>
+      )}
+      {/* </ScrollView> */}
 
       <View style={styles.footer}>
         <TouchableOpacity style={styles.cancelButton} onPress={onClose}>

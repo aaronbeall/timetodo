@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Svg, { Circle, Path, Line, Text as SvgText } from 'react-native-svg';
-import Animated, {
-  useSharedValue,
-  useAnimatedProps,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
-
-const AnimatedPath = Animated.createAnimatedComponent(Path);
-const AnimatedLine = Animated.createAnimatedComponent(Line);
 
 interface RadialClockProps {
   size?: number;
@@ -21,32 +12,10 @@ export default function RadialClock({
   currentTime = new Date(),
 }: RadialClockProps) {
   const [time, setTime] = useState(currentTime);
-  const rotation = useSharedValue(0);
-  const arcProgress = useSharedValue(0);
 
   useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setTime(now);
-
-      const hours = now.getHours();
-      const minutes = now.getMinutes();
-      const seconds = now.getSeconds();
-      const totalMinutes = hours * 60 + minutes + seconds / 60;
-      const angle = (totalMinutes / (24 * 60)) * 360;
-
-      rotation.value = withTiming(angle, {
-        duration: 1000,
-        easing: Easing.linear,
-      });
-      arcProgress.value = withTiming(angle, {
-        duration: 1000,
-        easing: Easing.linear,
-      });
-    };
-
+    const updateTime = () => setTime(new Date());
     updateTime();
-
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -55,21 +24,25 @@ export default function RadialClock({
   const clockRadius = size * 0.35;
   const hourMarkRadius = size * 0.38;
 
-  const animatedLineProps = useAnimatedProps(() => {
-    const angle = rotation.value - 90;
-    const radians = (angle * Math.PI) / 180;
-    const x2 = center + clockRadius * Math.cos(radians);
-    const y2 = center + clockRadius * Math.sin(radians);
+  const angle = (() => {
+    const hours = time.getHours();
+    const minutes = time.getMinutes();
+    const seconds = time.getSeconds();
+    const totalMinutes = hours * 60 + minutes + seconds / 60;
+    return (totalMinutes / (24 * 60)) * 360;
+  })();
 
+  const handPosition = (() => {
+    const adjustedAngle = angle - 90;
+    const radians = (adjustedAngle * Math.PI) / 180;
     return {
-      x2: x2 as any,
-      y2: y2 as any,
+      x2: center + clockRadius * Math.cos(radians),
+      y2: center + clockRadius * Math.sin(radians),
     };
-  });
+  })();
 
-  const animatedArcProps = useAnimatedProps(() => {
-    const angle = arcProgress.value;
-    if (angle === 0) return { d: '' };
+  const arcPath = (() => {
+    if (angle === 0) return '';
 
     const startAngle = -90;
     const endAngle = startAngle + angle;
@@ -79,7 +52,7 @@ export default function RadialClock({
 
     const largeArcFlag = angle > 180 ? 1 : 0;
 
-    const d = [
+    return [
       'M',
       center,
       center,
@@ -96,9 +69,7 @@ export default function RadialClock({
       end.y,
       'Z',
     ].join(' ');
-
-    return { d };
-  });
+  })();
 
   const renderHourMarks = () => {
     const marks = [];
@@ -124,7 +95,7 @@ export default function RadialClock({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { width: size, height: size }]}>
       <Svg width={size} height={size}>
         <Circle
           cx={center}
@@ -135,18 +106,15 @@ export default function RadialClock({
           strokeWidth="2"
         />
 
-        <AnimatedPath
-          animatedProps={animatedArcProps}
-          fill="#3B82F6"
-          fillOpacity={0.15}
-        />
+        <Path d={arcPath} fill="#3B82F6" fillOpacity={0.15} />
 
         {renderHourMarks()}
 
-        <AnimatedLine
+        <Line
           x1={center}
           y1={center}
-          animatedProps={animatedLineProps}
+          x2={handPosition.x2}
+          y2={handPosition.y2}
           stroke="#3B82F6"
           strokeWidth="3"
           strokeLinecap="round"
