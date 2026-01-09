@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import Svg, { Circle, Path, Line, G, Text as SvgText } from 'react-native-svg';
 
 interface RadialTimePickerProps {
@@ -8,6 +9,7 @@ interface RadialTimePickerProps {
   endTime: string;
   onChange: (start: string, end: string) => void;
   size?: number;
+  onDraggingChange?: (isDragging: boolean) => void;
 }
 
 export default function RadialTimePicker({
@@ -15,11 +17,18 @@ export default function RadialTimePicker({
   endTime,
   onChange,
   size = 280,
+  onDraggingChange,
 }: RadialTimePickerProps) {
   const [dragging, setDragging] = useState<'start' | 'end' | null>(null);
+  const svgContainerRef = useRef<View>(null);
+  const draggingRef = useRef<'start' | 'end' | null>(null);
 
   const center = size / 2;
   const radius = size * 0.38;
+
+  // Shared values for animated positions
+  const startAngleValue = useSharedValue(0);
+  const endAngleValue = useSharedValue(0);
 
   const timeToAngle = (timeStr: string): number => {
     const [hours, minutes] = timeStr.split(':').map(Number);
@@ -44,31 +53,144 @@ export default function RadialTimePicker({
     return (Math.atan2(dy, dx) * 180) / Math.PI;
   };
 
+  const getAngularDistance = (angle1: number, angle2: number): number => {
+    let diff = Math.abs(angle1 - angle2);
+    if (diff > 180) diff = 360 - diff;
+    return diff;
+  };
+
+  const getDistance = (x1: number, y1: number, x2: number, y2: number): number => {
+    return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+  };
+
   const startAngle = timeToAngle(startTime);
   const endAngle = timeToAngle(endTime);
 
-  const gesture = Gesture.Pan()
-    .onStart((e) => {
-      const angle = cartesianToAngle(e.x, e.y);
-      const distToStart = Math.abs(angle - startAngle);
-      const distToEnd = Math.abs(angle - endAngle);
+  // Update shared values when times change
+  startAngleValue.value = withSpring(startAngle);
+  endAngleValue.value = withSpring(endAngle);
 
-      setDragging(distToStart < distToEnd ? 'start' : 'end');
+  // Animated styles for start handle
+  const startHandleStyle = useAnimatedStyle(() => {
+    const angleInRadians = (startAngleValue.value * Math.PI) / 180;
+    const x = center + radius * Math.cos(angleInRadians) - 12;
+    const y = center + radius * Math.sin(angleInRadians) - 12;
+    
+    return {
+      position: 'absolute',
+      left: x,
+      top: y,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: '#10B981',
+      borderWidth: 3,
+      borderColor: '#FFFFFF',
+    };
+  });
+
+  // Animated styles for end handle
+  const endHandleStyle = useAnimatedStyle(() => {
+    const angleInRadians = (endAngleValue.value * Math.PI) / 180;
+    const x = center + radius * Math.cos(angleInRadians) - 12;
+    const y = center + radius * Math.sin(angleInRadians) - 12;
+    
+    return {
+      position: 'absolute',
+      left: x,
+      top: y,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: '#EF4444',
+      borderWidth: 3,
+      borderColor: '#FFFFFF',
+    };
+  });
+
+  const isNearHandle = (x: number, y: number): boolean => {
+    const startPoint = polarToCartesian(center, center, radius, startAngle);
+    const endPoint = polarToCartesian(center, center, radius, endAngle);
+    
+    const distToStart = getDistance(x, y, startPoint.x, startPoint.y);
+    const distToEnd = getDistance(x, y, endPoint.x, endPoint.y);
+    
+    // Check if touch is within 40px of either handle
+    return distToStart < 40 || distToEnd < 40;
+  };
+
+  const panGesture = Gesture.Pan()
+    .onBegin((e) => {
+      'worklet';
+      const { x, y } = e;
+      
+      // Calculate distance from touch point to start and end handles
+      const startAngleRad = (startAngleValue.value * Math.PI) / 180;
+      const endAngleRad = (endAngleValue.value * Math.PI) / 180;
+      
+      const startPointX = center + radius * Math.cos(startAngleRad);
+      const startPointY = center + radius * Math.sin(startAngleRad);
+      const endPointX = center + radius * Math.cos(endAngleRad);
+      const endPointY = center + radius * Math.sin(endAngleRad);
+      
+      const distToStart = Math.sqrt((x - startPointX) ** 2 + (y - startPointY) ** 2);
+      const distToEnd = Math.sqrt((x - endPointX) ** 2 + (y - endPointY) ** 2);
+
+      const whichDrag = distToStart < distToEnd ? 'start' : 'end';
+      runOnJS(setDragging)(whichDrag);
+      runOnJS(() => {
+        draggingRef.current = whichDrag;
+        onDraggingChange?.(true);
+      })();
     })
     .onUpdate((e) => {
-      if (!dragging) return;
+      'worklet';
+      if (!draggingRef.current) return;
 
-      const angle = cartesianToAngle(e.x, e.y);
-      const newTime = angleToTime(angle);
+      const { x, y } = e;
+      const dx = x - center;
+      const dy = y - center;
+      const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
 
-      if (dragging === 'start') {
-        onChange(newTime, endTime);
+      if (draggingRef.current === 'start') {
+        startAngleValue.value = angle;
+        runOnJS((newAngle: number) => {
+          let normalizedAngle = (newAngle + 90) % 360;
+          if (normalizedAngle < 0) normalizedAngle += 360;
+          const totalMinutes = Math.round((normalizedAngle / 360) * 24 * 60);
+          const hours = Math.floor(totalMinutes / 60) % 24;
+          const minutes = totalMinutes % 60;
+          const newTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
+          onChange(newTime, endTime);
+        })(angle);
       } else {
-        onChange(startTime, newTime);
+        endAngleValue.value = angle;
+        runOnJS((newAngle: number) => {
+          let normalizedAngle = (newAngle + 90) % 360;
+          if (normalizedAngle < 0) normalizedAngle += 360;
+          const totalMinutes = Math.round((normalizedAngle / 360) * 24 * 60);
+          const hours = Math.floor(totalMinutes / 60) % 24;
+          const minutes = totalMinutes % 60;
+          const newTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`;
+          onChange(startTime, newTime);
+        })(angle);
       }
     })
     .onEnd(() => {
-      setDragging(null);
+      'worklet';
+      runOnJS(() => {
+        draggingRef.current = null;
+        setDragging(null);
+        onDraggingChange?.(false);
+      })();
+    })
+    .onFinalize(() => {
+      'worklet';
+      runOnJS(() => {
+        draggingRef.current = null;
+        setDragging(null);
+        onDraggingChange?.(false);
+      })();
     });
 
   const renderHourMarks = () => {
@@ -126,9 +248,11 @@ export default function RadialTimePicker({
 
   return (
     <View style={styles.container}>
-      <GestureDetector gesture={gesture}>
-        <View>
-          <Svg width={size} height={size}>
+      <GestureDetector gesture={panGesture}>
+        <View
+          ref={svgContainerRef}
+          style={[styles.svgContainer, { width: size, height: size }]}>
+          <Svg width={size} height={size} pointerEvents="none">
             <Circle
               cx={center}
               cy={center}
@@ -147,25 +271,10 @@ export default function RadialTimePicker({
             />
 
             {renderHourMarks()}
-
-            <Circle
-              cx={startPoint.x}
-              cy={startPoint.y}
-              r="12"
-              fill="#10B981"
-              stroke="#FFFFFF"
-              strokeWidth="3"
-            />
-
-            <Circle
-              cx={endPoint.x}
-              cy={endPoint.y}
-              r="12"
-              fill="#EF4444"
-              stroke="#FFFFFF"
-              strokeWidth="3"
-            />
           </Svg>
+          
+          <Animated.View style={startHandleStyle} />
+          <Animated.View style={endHandleStyle} />
         </View>
       </GestureDetector>
 
@@ -208,6 +317,11 @@ function formatTime(timeStr: string): string {
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
+  },
+  svgContainer: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   timeDisplay: {
     flexDirection: 'row',
