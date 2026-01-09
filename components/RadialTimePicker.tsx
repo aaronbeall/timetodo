@@ -75,7 +75,7 @@ export default function RadialTimePicker({
     const angleInRadians = (startAngleValue.value * Math.PI) / 180;
     const x = center + radius * Math.cos(angleInRadians) - 12;
     const y = center + radius * Math.sin(angleInRadians) - 12;
-    
+
     return {
       position: 'absolute',
       left: x,
@@ -94,7 +94,7 @@ export default function RadialTimePicker({
     const angleInRadians = (endAngleValue.value * Math.PI) / 180;
     const x = center + radius * Math.cos(angleInRadians) - 12;
     const y = center + radius * Math.sin(angleInRadians) - 12;
-    
+
     return {
       position: 'absolute',
       left: x,
@@ -111,10 +111,10 @@ export default function RadialTimePicker({
   const isNearHandle = (x: number, y: number): boolean => {
     const startPoint = polarToCartesian(center, center, radius, startAngle);
     const endPoint = polarToCartesian(center, center, radius, endAngle);
-    
+
     const distToStart = getDistance(x, y, startPoint.x, startPoint.y);
     const distToEnd = getDistance(x, y, endPoint.x, endPoint.y);
-    
+
     // Check if touch is within 40px of either handle
     return distToStart < 40 || distToEnd < 40;
   };
@@ -123,16 +123,16 @@ export default function RadialTimePicker({
     .onBegin((e) => {
       'worklet';
       const { x, y } = e;
-      
+
       // Calculate distance from touch point to start and end handles
       const startAngleRad = (startAngleValue.value * Math.PI) / 180;
       const endAngleRad = (endAngleValue.value * Math.PI) / 180;
-      
+
       const startPointX = center + radius * Math.cos(startAngleRad);
       const startPointY = center + radius * Math.sin(startAngleRad);
       const endPointX = center + radius * Math.cos(endAngleRad);
       const endPointY = center + radius * Math.sin(endAngleRad);
-      
+
       const distToStart = Math.sqrt((x - startPointX) ** 2 + (y - startPointY) ** 2);
       const distToEnd = Math.sqrt((x - endPointX) ** 2 + (y - endPointY) ** 2);
 
@@ -272,7 +272,7 @@ export default function RadialTimePicker({
 
             {renderHourMarks()}
           </Svg>
-          
+
           <Animated.View style={startHandleStyle} />
           <Animated.View style={endHandleStyle} />
         </View>

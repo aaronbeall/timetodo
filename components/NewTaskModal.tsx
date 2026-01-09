@@ -112,9 +112,9 @@ export default function NewTaskModal({
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.content} 
-        showsVerticalScrollIndicator={false} 
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
         scrollEnabled={!isPickerDragging}
         simultaneousHandlers={undefined}>
         <View style={styles.section}>
