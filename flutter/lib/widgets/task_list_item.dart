@@ -33,7 +33,7 @@ class TaskListItem extends StatelessWidget {
   }
 
   String _timeLabel() {
-    if (_isAllDay) return '';
+    if (_isAllDay) return 'All day';
     if (task.startTime != null && task.endTime != null) {
       return '${_formatTime(task.startTime!)}–${_formatTime(task.endTime!)}';
     }
@@ -41,23 +41,28 @@ class TaskListItem extends StatelessWidget {
     return '';
   }
 
-  Color _inkColor(Color base) {
+  Color _inkColor(Color base, Brightness brightness) {
     final hsl = HSLColor.fromColor(base);
+    if (brightness == Brightness.dark) {
+      return hsl
+          .withLightness(hsl.lightness.clamp(0.72, 0.86))
+          .withSaturation(hsl.saturation.clamp(0.4, 1))
+          .toColor();
+    }
     return hsl
-        .withLightness(hsl.lightness.clamp(0.18, 0.42))
-        .withSaturation(hsl.saturation.clamp(0.35, 1))
+        .withLightness(hsl.lightness.clamp(0.22, 0.36))
+        .withSaturation(hsl.saturation.clamp(0.5, 1))
         .toColor();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final ink = _inkColor(task.color);
-    final wash = _isActive
-        ? task.color.withOpacity(0.28)
-        : _isDone
-            ? task.color.withOpacity(0.08)
-            : task.color.withOpacity(_isAllDay ? 0.1 : 0.16);
+    final ink = _inkColor(task.color, theme.brightness);
+    final wash = _isDone
+        ? task.color.withOpacity(0.08)
+        : task.color.withOpacity(_isAllDay ? 0.08 : 0.12);
+    final fill = task.color.withOpacity(0.2);
     final textOpacity = _isDone
         ? 0.55
         : _isAllDay
@@ -65,16 +70,16 @@ class TaskListItem extends StatelessWidget {
             : 1.0;
 
     final titleStyle = theme.textTheme.bodyLarge?.copyWith(
-      fontWeight: _isActive ? FontWeight.w600 : FontWeight.w500,
-      fontSize: _isActive ? 16 : 15,
+      fontWeight: FontWeight.w500,
+      fontSize: 15,
       color: ink.withOpacity(textOpacity),
       decoration: _isDone ? TextDecoration.lineThrough : null,
       decorationColor: ink.withOpacity(0.5),
     );
 
     final timeStyle = theme.textTheme.bodySmall?.copyWith(
-      fontWeight: _isActive ? FontWeight.w600 : FontWeight.w500,
-      color: ink.withOpacity(textOpacity * 0.85),
+      fontWeight: FontWeight.w500,
+      color: ink.withOpacity(textOpacity * 0.92),
       decoration: _isDone ? TextDecoration.lineThrough : null,
       decorationColor: ink.withOpacity(0.4),
       letterSpacing: 0.1,
@@ -82,19 +87,31 @@ class TaskListItem extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Container(
-        padding: EdgeInsets.fromLTRB(
-          12,
-          _isActive ? 10 : 8,
-          6,
-          _isActive ? 10 : 8,
-        ),
-        decoration: BoxDecoration(
-          color: wash,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
           children: [
+            Positioned.fill(child: ColoredBox(color: wash)),
+            if (_isActive)
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: task.elapsedFraction(currentTime),
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: fill,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+              child: Row(
+                children: [
             if (task.isCompleted) ...[
               Icon(
                 Icons.check_rounded,
@@ -113,34 +130,39 @@ class TaskListItem extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Text(_timeLabel(), style: timeStyle),
+            const SizedBox(width: 6),
             if (_isActive) ...[
               if (task.isInSnoozeGrace(currentTime))
-                _TintedIcon(
+                _ActionButton(
                   icon: Icons.snooze_rounded,
                   color: ink,
                   onPressed: onSnooze,
                   tooltip: 'Snooze 15 min',
                 )
               else
-                _TintedIcon(
+                _ActionButton(
                   icon: Icons.more_time_rounded,
                   color: ink,
                   onPressed: onExtend,
                   tooltip: 'Extend 15 min',
                 ),
-              _TintedIcon(
+              const SizedBox(width: 4),
+              _ActionButton(
                 icon: Icons.check_rounded,
                 color: ink,
                 onPressed: onComplete,
                 tooltip: 'Complete',
               ),
             ] else if (!_isAllDay && !_isDone && onCancel != null)
-              _TintedIcon(
+              _ActionButton(
                 icon: Icons.close_rounded,
                 color: ink,
                 onPressed: onCancel,
                 tooltip: 'Skip today',
               ),
+          ],
+              ),
+            ),
           ],
         ),
       ),
@@ -148,13 +170,13 @@ class TaskListItem extends StatelessWidget {
   }
 }
 
-class _TintedIcon extends StatelessWidget {
+class _ActionButton extends StatelessWidget {
   final IconData icon;
   final Color color;
   final VoidCallback? onPressed;
   final String tooltip;
 
-  const _TintedIcon({
+  const _ActionButton({
     required this.icon,
     required this.color,
     required this.onPressed,
@@ -163,14 +185,21 @@ class _TintedIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(icon, size: 18),
+    return IconButton.filledTonal(
       onPressed: onPressed,
       tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-      color: color.withOpacity(0.7),
+      icon: Icon(icon),
+      style: IconButton.styleFrom(
+        foregroundColor: color,
+        backgroundColor: color.withOpacity(0.16),
+        disabledBackgroundColor: color.withOpacity(0.08),
+        iconSize: 22,
+        minimumSize: const Size(44, 44),
+        maximumSize: const Size(44, 44),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.standard,
+      ),
     );
   }
 }

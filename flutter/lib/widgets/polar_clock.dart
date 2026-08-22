@@ -62,7 +62,7 @@ class PolarClockPainter extends CustomPainter {
   });
 
   /// Midnight at 9 o'clock (left), sweeping clockwise.
-  double _angleForMinutes(int minutes) {
+  double _angleForMinutes(num minutes) {
     return math.pi + 2 * math.pi * (minutes / _minutesPerDay);
   }
 
@@ -89,19 +89,23 @@ class PolarClockPainter extends CustomPainter {
 
     final lanes = _assignTasksToTracks(timedTasks);
     final laneCount = lanes.length;
-    if (laneCount > 0 && tracksOuter > tracksInner) {
-      final gap = laneCount > 1
-          ? math.min(2.5, (tracksOuter - tracksInner) * 0.015)
-          : 0.0;
-      final trackWidth =
-          ((tracksOuter - tracksInner) - gap * (laneCount - 1)) / laneCount;
+    if (tracksOuter > tracksInner) {
+      if (laneCount > 0) {
+        final gap = laneCount > 1
+            ? math.min(2.5, (tracksOuter - tracksInner) * 0.015)
+            : 0.0;
+        final trackWidth =
+            ((tracksOuter - tracksInner) - gap * (laneCount - 1)) / laneCount;
 
-      for (var i = 0; i < laneCount; i++) {
-        final innerEdge = tracksInner + i * (trackWidth + gap);
-        final radius = innerEdge + trackWidth / 2;
-        for (final task in lanes[i]!) {
-          _drawTaskTrack(canvas, center, radius, trackWidth, task);
+        for (var i = 0; i < laneCount; i++) {
+          final innerEdge = tracksInner + i * (trackWidth + gap);
+          final radius = innerEdge + trackWidth / 2;
+          for (final task in lanes[i]!) {
+            _drawTaskTrack(canvas, center, radius, trackWidth, task);
+          }
         }
+      } else {
+        _drawGhostHourTracks(canvas, center, tracksInner, tracksOuter);
       }
     }
 
@@ -211,6 +215,37 @@ class PolarClockPainter extends CustomPainter {
       false,
       filledPaint,
     );
+  }
+
+  void _drawGhostHourTracks(
+    Canvas canvas,
+    Offset center,
+    double tracksInner,
+    double tracksOuter,
+  ) {
+    final trackWidth = (tracksOuter - tracksInner) * 0.72;
+    final radius = tracksInner + trackWidth / 2;
+    const segmentMinutes = 3 * 60;
+    const gapMinutes = 16;
+    final sweep =
+        ((segmentMinutes - gapMinutes) / _minutesPerDay) * 2 * math.pi;
+    final paint = Paint()
+      ..color = trackColor.withOpacity(0.16)
+      ..style = PaintingStyle.fill;
+
+    for (var i = 0; i < 8; i++) {
+      final startMinutes = i * segmentMinutes + gapMinutes / 2;
+      canvas.drawPath(
+        _roundedTrackPath(
+          center,
+          radius,
+          trackWidth,
+          _angleForMinutes(startMinutes),
+          sweep,
+        ),
+        paint,
+      );
+    }
   }
 
   void _drawTaskTrack(
@@ -374,7 +409,9 @@ class PolarClockPainter extends CustomPainter {
     final angle = _angleForMinutes(minutes);
     final shaftWidth = math.max(3.0, (outerRadius - innerRadius) * 0.018);
     final tipRadius = shaftWidth * 1.15;
-    final tipCenter = outerRadius - 1;
+    final haloRadius = tipRadius + 1.6;
+    // Keep the cap fully inside the square so it isn't clipped at 12/6.
+    final tipCenter = outerRadius - haloRadius - 1;
     final shaftEnd = tipCenter - tipRadius * 0.35;
 
     canvas.save();

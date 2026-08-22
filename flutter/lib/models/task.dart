@@ -174,6 +174,15 @@ class Task {
     return minutesSinceStart(currentTime) < snoozeGraceMinutes;
   }
 
+  double elapsedFraction(TimeOfDay currentTime) {
+    if (startTime == null || endTime == null) return 0;
+    final start = startTime!.hour * 60 + startTime!.minute;
+    final end = endTime!.hour * 60 + endTime!.minute;
+    final duration = start <= end ? end - start : 24 * 60 - start + end;
+    if (duration <= 0) return 0;
+    return (minutesSinceStart(currentTime) / duration).clamp(0.0, 1.0);
+  }
+
   bool shouldShowOnDate(DateTime date) {
     if (this.date.year == date.year &&
         this.date.month == date.month &&

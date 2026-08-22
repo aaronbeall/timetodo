@@ -182,7 +182,6 @@ List<Task> _packed(DateTime day) {
       end: _t(22, 45),
     ),
     d.allDay('Drink water', const Color(0xFF29B6F6)),
-    d.allDay('Inbox zero', const Color(0xFF78909C)),
   ];
 
   void span(String label, int startMin, int durationMin) {
@@ -195,33 +194,25 @@ List<Task> _packed(DateTime day) {
     );
   }
 
-  // Long covering blocks that overlap each other.
-  for (var start = 6 * 60 + 30; start < 22 * 60; start += 90) {
-    span('Focus ${1 + (start ~/ 90)}', start, 150);
+  for (var start = 7 * 60; start < 21 * 60; start += 180) {
+    span('Focus ${1 + ((start - 7 * 60) ~/ 180)}', start, 150);
   }
 
-  // Dense 45-minute meetings every 20 minutes through the workday.
-  for (var start = 9 * 60; start < 18 * 60; start += 20) {
-    span('Meeting ${1 + ((start - 9 * 60) ~/ 20)}', start, 45);
+  for (var start = 9 * 60; start < 17 * 60; start += 40) {
+    span('Meeting ${1 + ((start - 9 * 60) ~/ 40)}', start, 45);
   }
 
-  // Short pings stacked on the late morning.
-  for (var start = 10 * 60; start < 12 * 60 + 30; start += 12) {
-    span('Ping ${1 + ((start - 10 * 60) ~/ 12)}', start, 25);
+  for (var start = 10 * 60; start < 12 * 60; start += 24) {
+    span('Ping ${1 + ((start - 10 * 60) ~/ 24)}', start, 25);
   }
 
-  // Afternoon review pile-up.
-  for (var start = 14 * 60; start < 16 * 60 + 30; start += 15) {
-    span('Review ${1 + ((start - 14 * 60) ~/ 15)}', start, 50);
+  for (var start = 14 * 60; start < 16 * 60; start += 30) {
+    span('Review ${1 + ((start - 14 * 60) ~/ 30)}', start, 50);
   }
 
-  // Evening stack.
-  span('Commute', 17 * 60 + 15, 40);
   span('Gym', 17 * 60 + 45, 75);
-  span('Errands', 18 * 60 + 10, 55);
   span('Cook', 18 * 60 + 40, 70);
   span('Family', 19 * 60 + 15, 100);
-  span('Read', 20 * 60 + 30, 80);
 
   return tasks;
 }

@@ -80,7 +80,7 @@ class _TodayScreenState extends State<TodayScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Today'),
+        title: Text(_formatDate(_currentDate)),
         elevation: 0,
         actions: [
           PopupMenuButton<DemoScheduleKind>(
@@ -113,14 +113,17 @@ class _TodayScreenState extends State<TodayScreen> {
         builder: (context, taskProvider, child) {
           final todayTasks = taskProvider.getTasksForToday();
           final timedOpen = todayTasks
-              .where((t) => !t.isAllDay && !t.isCompleted && !t.isCanceled)
+              .where((t) =>
+                  !t.isAllDay && !t.isCompleted && !t.isCanceled)
               .toList();
-          timedOpen.sort((a, b) {
-            final aActive = a.isActive(_currentTime);
-            final bActive = b.isActive(_currentTime);
-            if (aActive != bActive) return aActive ? -1 : 1;
-            return _startMinutes(a).compareTo(_startMinutes(b));
-          });
+          final active = timedOpen
+              .where((t) => t.isActive(_currentTime))
+              .toList()
+            ..sort((a, b) => _startMinutes(a).compareTo(_startMinutes(b)));
+          final upcoming = timedOpen
+              .where((t) => !t.isActive(_currentTime))
+              .toList()
+            ..sort((a, b) => _startMinutes(a).compareTo(_startMinutes(b)));
           final allDayOpen = todayTasks
               .where((t) => t.isAllDay && !t.isCompleted && !t.isCanceled)
               .toList();
@@ -129,29 +132,22 @@ class _TodayScreenState extends State<TodayScreen> {
               .toList()
             ..sort((a, b) => _startMinutes(a).compareTo(_startMinutes(b)));
 
-          final listChildren = <Widget>[
-            ...timedOpen.map(
-              (task) => TaskListItem(
+          Widget item(Task task) => TaskListItem(
                 task: task,
                 currentTime: _currentTime,
                 onSnooze: () => taskProvider.snoozeTask(task.id),
                 onExtend: () => taskProvider.extendTask(task.id),
                 onComplete: () => taskProvider.completeTask(task.id),
                 onCancel: () => taskProvider.cancelTask(task.id),
-              ),
+              );
+
+          final listChildren = <Widget>[
+            ...active.map(item),
+            ...upcoming.map(
+              (task) => _UpcomingScale(child: item(task)),
             ),
-            ...allDayOpen.map(
-              (task) => TaskListItem(
-                task: task,
-                currentTime: _currentTime,
-              ),
-            ),
-            ...settled.map(
-              (task) => TaskListItem(
-                task: task,
-                currentTime: _currentTime,
-              ),
-            ),
+            ...allDayOpen.map(item),
+            ...settled.map(item),
             _buildAddTaskGhost(context, taskProvider),
           ];
 
@@ -197,18 +193,13 @@ class _TodayScreenState extends State<TodayScreen> {
                       final docked = remaining <= _minClock;
                       final frameT = docked ? 1.0 : 0.0;
                       final bezel = frameInset * 2 * frameT;
-                      final startLeft =
-                          (constraints.maxWidth - size) / 2;
-                      final endLeft = constraints.maxWidth -
-                          pipPad -
-                          bezel -
-                          size;
                       final left =
-                          startLeft + (endLeft - startLeft) * t;
+                          (constraints.maxWidth - size - bezel) / 2;
                       final top = docked
                           ? pipPad
                           : math.max(0.0, (remaining - size - bezel) / 2);
-                      final showCenter = t < 0.35;
+                      final timeScale =
+                          (size / maxClock).clamp(0.42, 1.0);
                       final theme = Theme.of(context);
 
                       return Positioned(
@@ -259,15 +250,10 @@ class _TodayScreenState extends State<TodayScreen> {
                                           tasks: todayTasks,
                                           size: size,
                                         ),
-                                        if (showCenter)
-                                          Opacity(
-                                            opacity: (1 - t / 0.35)
-                                                .clamp(0.0, 1.0),
-                                            child: Transform.scale(
-                                              scale: 1 - t * 0.4,
-                                              child: _buildClockCenter(context),
-                                            ),
-                                          ),
+                                        Transform.scale(
+                                          scale: timeScale,
+                                          child: _buildClockCenter(context),
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -335,11 +321,8 @@ class _TodayScreenState extends State<TodayScreen> {
       color: baseStyle.color?.withOpacity(0.5),
     );
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_isPM(_currentTime))
-          Row(
+    return _isPM(_currentTime)
+        ? Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
@@ -348,8 +331,7 @@ class _TodayScreenState extends State<TodayScreen> {
               Text(_formatTimePeriod(_currentTime), style: periodStyle),
             ],
           )
-        else
-          Row(
+        : Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -359,16 +341,7 @@ class _TodayScreenState extends State<TodayScreen> {
                 child: Text(_formatTimePeriod(_currentTime), style: periodStyle),
               ),
             ],
-          ),
-        const SizedBox(height: 4),
-        Text(
-          _formatDate(_currentDate),
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-              ),
-        ),
-      ],
-    );
+          );
   }
 
   void _showAddTaskDialog(BuildContext context, TaskProvider taskProvider) {
@@ -378,6 +351,35 @@ class _TodayScreenState extends State<TodayScreen> {
         initialDate: DateTime.now(),
         initialStartTime: _currentTime,
       ),
+    );
+  }
+}
+
+class _UpcomingScale extends StatelessWidget {
+  static const scale = 0.96;
+
+  final Widget child;
+
+  const _UpcomingScale({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Align(
+          alignment: Alignment.center,
+          child: SizedBox(
+            width: constraints.maxWidth * scale,
+            child: FittedBox(
+              fit: BoxFit.fitWidth,
+              child: SizedBox(
+                width: constraints.maxWidth,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
