@@ -22,6 +22,7 @@ class Task {
   List<int>? repeatWeekdays; // 0 = Sunday, 6 = Saturday
   bool isSnoozed;
   bool isCompleted;
+  bool isCanceled;
   DateTime? snoozedUntil;
 
   Task({
@@ -38,6 +39,7 @@ class Task {
     this.isSnoozed = false,
     this.snoozedUntil,
     this.isCompleted = false,
+    this.isCanceled = false,
   });
 
   Task copyWith({
@@ -53,6 +55,7 @@ class Task {
     List<int>? repeatWeekdays,
     bool? isSnoozed,
     bool? isCompleted,
+    bool? isCanceled,
     DateTime? snoozedUntil,
   }) {
     return Task(
@@ -68,6 +71,7 @@ class Task {
       repeatWeekdays: repeatWeekdays ?? this.repeatWeekdays,
       isSnoozed: isSnoozed ?? this.isSnoozed,
       isCompleted: isCompleted ?? this.isCompleted,
+      isCanceled: isCanceled ?? this.isCanceled,
       snoozedUntil: snoozedUntil ?? this.snoozedUntil,
     );
   }
@@ -89,6 +93,7 @@ class Task {
       'repeatWeekdays': repeatWeekdays,
       'isSnoozed': isSnoozed,
       'isCompleted': isCompleted,
+      'isCanceled': isCanceled,
       'snoozedUntil': snoozedUntil?.toIso8601String(),
     };
   }
@@ -121,6 +126,7 @@ class Task {
           : null,
       isSnoozed: json['isSnoozed'] ?? false,
       isCompleted: json['isCompleted'] ?? false,
+      isCanceled: json['isCanceled'] ?? false,
       snoozedUntil: json['snoozedUntil'] != null
           ? DateTime.parse(json['snoozedUntil'])
           : null,
@@ -128,7 +134,7 @@ class Task {
   }
 
   bool isActive(TimeOfDay currentTime) {
-    if (isAllDay || isCompleted || isSnoozed) return false;
+    if (isAllDay || isCompleted || isCanceled || isSnoozed) return false;
     if (startTime == null || endTime == null) return false;
 
     final current = currentTime.hour * 60 + currentTime.minute;
@@ -144,13 +150,28 @@ class Task {
   }
 
   bool isUpcoming(TimeOfDay currentTime) {
-    if (isAllDay || isCompleted || isSnoozed) return false;
+    if (isAllDay || isCompleted || isCanceled || isSnoozed) return false;
     if (startTime == null) return false;
 
     final current = currentTime.hour * 60 + currentTime.minute;
     final start = startTime!.hour * 60 + startTime!.minute;
 
     return current < start;
+  }
+
+  static const snoozeGraceMinutes = 15;
+
+  int minutesSinceStart(TimeOfDay currentTime) {
+    if (startTime == null) return 0;
+    final current = currentTime.hour * 60 + currentTime.minute;
+    final start = startTime!.hour * 60 + startTime!.minute;
+    if (current >= start) return current - start;
+    return 24 * 60 - start + current;
+  }
+
+  bool isInSnoozeGrace(TimeOfDay currentTime) {
+    if (!isActive(currentTime)) return false;
+    return minutesSinceStart(currentTime) < snoozeGraceMinutes;
   }
 
   bool shouldShowOnDate(DateTime date) {

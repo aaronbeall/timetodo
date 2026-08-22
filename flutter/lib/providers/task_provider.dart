@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:timetodo/data/demo_schedule.dart';
 import 'package:timetodo/models/task.dart';
+
+TimeOfDay _addMinutes(TimeOfDay time, int minutes) {
+  final total = (time.hour * 60 + time.minute + minutes) % (24 * 60);
+  final normalized = total < 0 ? total + 24 * 60 : total;
+  return TimeOfDay(hour: normalized ~/ 60, minute: normalized % 60);
+}
 
 class TaskProvider extends ChangeNotifier {
   final List<Task> _tasks = [];
@@ -35,30 +42,35 @@ class TaskProvider extends ChangeNotifier {
 
   void snoozeTask(String id) {
     final task = _tasks.firstWhere((t) => t.id == id);
-    if (task.startTime != null) {
-      final currentMinutes = task.startTime!.hour * 60 + task.startTime!.minute;
-      final newMinutes = currentMinutes + 15;
-      final newHours = newMinutes ~/ 60;
-      final newMins = newMinutes % 60;
+    if (task.startTime == null) return;
+    updateTask(
+      task.copyWith(
+        startTime: _addMinutes(task.startTime!, 15),
+        endTime: task.endTime != null ? _addMinutes(task.endTime!, 15) : null,
+      ),
+    );
+  }
 
-      final updatedTask = task.copyWith(
-        startTime: TimeOfDay(hour: newHours % 24, minute: newMins),
-        endTime: task.endTime != null
-            ? TimeOfDay(
-                hour: (task.endTime!.hour * 60 + task.endTime!.minute + 15) ~/
-                        60 %
-                    24,
-                minute: (task.endTime!.minute + 15) % 60,
-              )
-            : null,
-      );
-      updateTask(updatedTask);
-    }
+  void extendTask(String id) {
+    final task = _tasks.firstWhere((t) => t.id == id);
+    if (task.endTime == null) return;
+    updateTask(task.copyWith(endTime: _addMinutes(task.endTime!, 15)));
   }
 
   void completeTask(String id) {
     final task = _tasks.firstWhere((t) => t.id == id);
-    final updatedTask = task.copyWith(isCompleted: true);
-    updateTask(updatedTask);
+    updateTask(task.copyWith(isCompleted: true, isCanceled: false));
+  }
+
+  void cancelTask(String id) {
+    final task = _tasks.firstWhere((t) => t.id == id);
+    updateTask(task.copyWith(isCanceled: true, isCompleted: false));
+  }
+
+  void loadDemoSchedule(DemoScheduleKind kind) {
+    _tasks
+      ..clear()
+      ..addAll(buildDemoSchedule(DateTime.now(), kind));
+    notifyListeners();
   }
 }

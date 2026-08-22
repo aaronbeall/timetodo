@@ -6,7 +6,10 @@ import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/widgets/task_editor.dart';
 
 class TasksScreen extends StatefulWidget {
-  const TasksScreen({super.key});
+  const TasksScreen({super.key, this.focusTick = 0});
+
+  /// Bumped whenever the Tasks tab is selected so the list jumps to today.
+  final int focusTick;
 
   @override
   State<TasksScreen> createState() => _TasksScreenState();
@@ -15,6 +18,15 @@ class TasksScreen extends StatefulWidget {
 class _TasksScreenState extends State<TasksScreen> {
   DateTime _selectedDate = DateTime.now();
   String? _expandedTaskId;
+
+  @override
+  void didUpdateWidget(TasksScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusTick != oldWidget.focusTick) {
+      _selectedDate = DateTime.now();
+      _expandedTaskId = null;
+    }
+  }
 
   void _previousDay() {
     setState(() {

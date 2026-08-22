@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/screens/today_screen.dart';
 import 'package:timetodo/screens/tasks_screen.dart';
@@ -47,24 +46,26 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-
-  final List<Widget> _screens = [
-    const TodayScreen(),
-    const TasksScreen(),
-  ];
+  int _tasksFocusTick = 0;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: [
+          const TodayScreen(),
+          TasksScreen(focusTick: _tasksFocusTick),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (int index) {
           setState(() {
             _currentIndex = index;
+            if (index == 1) {
+              _tasksFocusTick++;
+            }
           });
         },
         destinations: const [
