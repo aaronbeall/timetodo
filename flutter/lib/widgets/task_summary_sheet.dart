@@ -262,7 +262,7 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                               ),
                           ],
                         ),
-                        if (stats.total > 0) ...[
+                        if (stats.total > 1) ...[
                           const SizedBox(height: 4),
                           Text(
                             _seriesStatsLine(stats),
