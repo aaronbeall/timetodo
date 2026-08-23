@@ -171,7 +171,7 @@ class _MainScreenState extends State<MainScreen> {
           NavigationDestination(
             icon: Icon(Icons.insights_outlined),
             selectedIcon: Icon(Icons.insights),
-            label: 'Reports',
+            label: 'Stats',
           ),
         ],
       ),

@@ -17,7 +17,7 @@ class ReportsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Reports'),
+        title: const Text('Stats'),
         elevation: 0,
         actions: [
           IconButton(
