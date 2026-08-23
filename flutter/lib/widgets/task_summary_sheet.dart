@@ -17,7 +17,7 @@ Future<void> showTaskSummarySheet(
   required TimeOfDay now,
   required VoidCallback onEdit,
 }) async {
-  final draft = _InstanceDraft.from(task, now);
+  final draft = _OccurrenceDraft.from(task, now);
   var openParent = false;
   await showModalBottomSheet<void>(
     context: context,
@@ -47,7 +47,7 @@ Future<void> showTaskSummarySheet(
   }
 }
 
-class _InstanceDraft {
+class _OccurrenceDraft {
   TimeOfDay? startTime;
   TimeOfDay? endTime;
   _StatusChoice status;
@@ -57,7 +57,7 @@ class _InstanceDraft {
   final TimeOfDay? initialEnd;
   final _StatusChoice initialStatus;
 
-  _InstanceDraft({
+  _OccurrenceDraft({
     required this.startTime,
     required this.endTime,
     required this.status,
@@ -66,9 +66,9 @@ class _InstanceDraft {
     required this.initialStatus,
   });
 
-  factory _InstanceDraft.from(ScheduledTask task, TimeOfDay now) {
+  factory _OccurrenceDraft.from(ScheduledTask task, TimeOfDay now) {
     final status = _statusOf(task, now);
-    return _InstanceDraft(
+    return _OccurrenceDraft(
       startTime: task.startTime,
       endTime: task.endTime,
       status: status,
@@ -96,7 +96,7 @@ class _InstanceDraft {
 VoidCallback? _commitDraft(
   BuildContext context,
   ScheduledTask task,
-  _InstanceDraft draft,
+  _OccurrenceDraft draft,
 ) {
   if (!draft.isDirty) return null;
   final provider = context.read<TaskProvider>();
@@ -117,7 +117,7 @@ VoidCallback? _commitDraft(
   );
 }
 
-String _commitMessage(String label, _InstanceDraft draft) {
+String _commitMessage(String label, _OccurrenceDraft draft) {
   if (draft.applyFollowing && !draft.writesStatus) {
     return 'Applied time to future $label';
   }
@@ -147,7 +147,7 @@ enum _StatusChoice {
 class _TaskSummarySheet extends StatefulWidget {
   final ScheduledTask task;
   final TimeOfDay now;
-  final _InstanceDraft draft;
+  final _OccurrenceDraft draft;
   final VoidCallback onEditParent;
 
   const _TaskSummarySheet({
@@ -163,7 +163,7 @@ class _TaskSummarySheet extends StatefulWidget {
 
 class _TaskSummarySheetState extends State<_TaskSummarySheet> {
   ScheduledTask get task => widget.task;
-  _InstanceDraft get draft => widget.draft;
+  _OccurrenceDraft get draft => widget.draft;
 
   ScheduledTask get _preview {
     final day = dateOnly(task.date);
@@ -236,7 +236,7 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text(
-                              _instanceDateLabel(day),
+                              _occurrenceDateLabel(day),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: muted,
                               ),
@@ -446,7 +446,7 @@ class _StatusRow extends StatelessWidget {
 
 String _seriesStatsLine(TaskSeriesStats stats) {
   final n = stats.total;
-  final noun = n == 1 ? 'instance' : 'instances';
+  final noun = n == 1 ? 'occurrence' : 'occurrences';
   final parts = <String>['$n $noun'];
   final done = stats.completionRate;
   if (done != null) {
@@ -520,7 +520,7 @@ class _SummaryLine extends StatelessWidget {
   }
 }
 
-String _instanceDateLabel(DateTime day) {
+String _occurrenceDateLabel(DateTime day) {
   final now = DateTime.now();
   final months = (now.year - day.year) * 12 + now.month - day.month;
   final format = months.abs() < 12 ? DateFormat.MMMEd() : DateFormat.yMMMEd();

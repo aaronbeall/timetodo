@@ -417,7 +417,7 @@ class TaskProvider extends ChangeNotifier {
     });
   }
 
-  /// One undoable write for instance-sheet edits (times, status, following).
+  /// One undoable write for occurrence-sheet edits (times, status, following).
   VoidCallback? commitOccurrenceEdits({
     required String taskId,
     required DateTime day,
@@ -715,7 +715,7 @@ class TaskProvider extends ChangeNotifier {
     );
   }
 
-  ScheduledTask? _instanceOnLineage(Task live, DateTime day) {
+  ScheduledTask? _occurrenceOnLineage(Task live, DateTime day) {
     if (!_appearsOn(live, day)) return null;
     return ScheduledTask(
       task: live,
@@ -728,7 +728,7 @@ class TaskProvider extends ChangeNotifier {
     var cursor = dateOnly(asOf);
     var streak = 0;
     for (var i = 0; i < 400; i++) {
-      final item = _instanceOnLineage(task, cursor);
+      final item = _occurrenceOnLineage(task, cursor);
       if (item == null) {
         if (streak == 0 && i == 0) {
           cursor = cursor.subtract(const Duration(days: 1));

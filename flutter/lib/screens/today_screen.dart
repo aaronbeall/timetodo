@@ -112,10 +112,6 @@ class _TodayScreenState extends State<TodayScreen> {
     return time.hour >= 12 ? 'PM' : 'AM';
   }
 
-  bool _isPM(TimeOfDay time) {
-    return time.hour >= 12;
-  }
-
   String _ordinalSuffix(int day) {
     if (day >= 11 && day <= 13) return 'th';
     switch (day % 10) {
@@ -679,38 +675,27 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Widget _buildClockCenter(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurface;
     final baseStyle = Theme.of(context).textTheme.headlineMedium?.copyWith(
           fontWeight: FontWeight.w500,
-          color: Theme.of(context).colorScheme.onSurface,
+          height: 1,
+          color: color,
         ) ??
         const TextStyle();
-    final periodSize = (baseStyle.fontSize ?? 28) * 0.5;
     final periodStyle = baseStyle.copyWith(
-      fontSize: periodSize,
-      color: baseStyle.color?.withOpacity(0.5),
+      fontSize: (baseStyle.fontSize ?? 28) * 0.42,
+      fontWeight: FontWeight.w600,
+      color: color.withValues(alpha: 0.55),
     );
 
-    return _isPM(_currentTime)
-        ? Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(_formatTimeNumber(_currentTime), style: baseStyle),
-              Text(_formatTimePeriod(_currentTime), style: periodStyle),
-            ],
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(_formatTimeNumber(_currentTime), style: baseStyle),
-              Transform.translate(
-                offset: const Offset(0, 1),
-                child: Text(_formatTimePeriod(_currentTime), style: periodStyle),
-              ),
-            ],
-          );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(_formatTimeNumber(_currentTime), style: baseStyle),
+        const SizedBox(height: 4),
+        Text(_formatTimePeriod(_currentTime), style: periodStyle),
+      ],
+    );
   }
 
   void _showAddTaskDialog(BuildContext context, TaskProvider taskProvider) {
@@ -759,8 +744,8 @@ class _ConnectorPainter extends CustomPainter {
     final cx = size.width / 2;
     const radius = 2.25;
     const lineWidth = 2.0;
-    final top = 0.0;
-    final bottom = size.height - radius;
+    final top = radius;
+    final bottom = size.height;
     canvas.drawRRect(
       RRect.fromLTRBR(
         cx - lineWidth / 2,
@@ -771,7 +756,7 @@ class _ConnectorPainter extends CustomPainter {
       ),
       paint,
     );
-    canvas.drawCircle(Offset(cx, bottom), radius, paint);
+    canvas.drawCircle(Offset(cx, radius), radius, paint);
   }
 
   @override

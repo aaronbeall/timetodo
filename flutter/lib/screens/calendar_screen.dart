@@ -370,11 +370,63 @@ class _CalendarScreenState extends State<CalendarScreen> {
       size: size,
       animate: false,
       showNow: isToday,
-      onTaskTap: _showInstance,
+      onTaskTap: _showOccurrence,
     );
   }
 
-  void _showInstance(ScheduledTask task) {
+  Widget _polarWithTime(
+    List<ScheduledTask> tasks, {
+    required double size,
+    required DateTime day,
+  }) {
+    final polar = _polar(tasks, size: size, day: day);
+    if (!isSameDay(day, _today)) return polar;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          polar,
+          IgnorePointer(child: _nowHubLabel(size)),
+        ],
+      ),
+    );
+  }
+
+  Widget _nowHubLabel(double size) {
+    final now = TimeOfDay.now();
+    final hour = now.hour == 0 ? 12 : (now.hour > 12 ? now.hour - 12 : now.hour);
+    final minute = now.minute.toString().padLeft(2, '0');
+    final period = now.hour >= 12 ? 'PM' : 'AM';
+    final color = Theme.of(context).colorScheme.onSurface;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$hour:$minute',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: (size * 0.1).clamp(12.0, 20.0),
+            height: 1,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          period,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: (size * 0.045).clamp(8.0, 11.0),
+            height: 1,
+            color: color.withValues(alpha: 0.55),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showOccurrence(ScheduledTask task) {
     showTaskSummarySheet(
       context,
       task: task,
@@ -399,7 +451,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 children: [
-                  Center(child: _polar(items, size: polarSize, day: day)),
+                  Center(
+                    child: _polarWithTime(items, size: polarSize, day: day),
+                  ),
                   const SizedBox(height: 16),
                   if (items.isEmpty)
                     Padding(
@@ -415,75 +469,105 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               ),
                         ),
                       ),
-                    )
-                  else
-                    for (final task in items)
-                      TaskListItem(
-                        task: task,
-                        currentTime: now,
-                        date: day,
-                        calendarList: true,
-                        onTap: () => _showInstance(task),
-                        onSnooze: isSameDay(day, _today)
-                            ? () {
-                                final undo =
-                                    provider.snoozeTask(task.id, day);
-                                showChangeToast(
-                                  context,
-                                  message: 'Snoozed ${task.label} 15 min',
-                                  onUndo: undo,
-                                );
-                              }
-                            : null,
-                        onExtend: isSameDay(day, _today)
-                            ? () {
-                                final undo =
-                                    provider.extendTask(task.id, day);
-                                showChangeToast(
-                                  context,
-                                  message: 'Extended ${task.label} 15 min',
-                                  onUndo: undo,
-                                );
-                              }
-                            : null,
-                        onComplete: isSameDay(day, _today)
-                            ? () {
-                                final undo =
-                                    provider.completeTask(task.id, day);
-                                showChangeToast(
-                                  context,
-                                  message: 'Completed ${task.label}',
-                                  onUndo: undo,
-                                );
-                              }
-                            : null,
-                        onCancel: () {
-                          final undo = provider.cancelTask(task.id, day);
-                          showChangeToast(
-                            context,
-                            message: 'Skipped ${task.label}',
-                            onUndo: undo,
-                          );
-                        },
-                        onDoNow: isSameDay(day, _today)
-                            ? () {
-                                final undo = provider.doNowTask(
-                                  task.id,
-                                  day,
-                                  now,
-                                );
-                                showChangeToast(
-                                  context,
-                                  message: 'Started ${task.label} now',
-                                  onUndo: undo,
-                                );
-                              }
-                            : null,
-                      ),
+                    ),
+                  ..._scheduleRows(provider, day, items, now),
                 ],
               );
             },
           );
+  }
+
+  List<Widget> _scheduleRows(
+    TaskProvider provider,
+    DateTime day,
+    List<ScheduledTask> items,
+    TimeOfDay now,
+  ) {
+    final allDay = items.where((t) => t.isAllDay).toList();
+    final timed = items.where((t) => !t.isAllDay).toList();
+    final rows = <Widget>[
+      for (final task in allDay) _scheduleTile(provider, day, task, now),
+    ];
+    if (!isSameDay(day, _today)) {
+      rows.addAll([
+        for (final task in timed) _scheduleTile(provider, day, task, now),
+      ]);
+      return rows;
+    }
+    var placedNow = false;
+    for (final task in timed) {
+      final beforeNow = task.isUpcoming(now) || task.isActive(now);
+      if (!placedNow && beforeNow) {
+        rows.add(const ScheduleNowBar());
+        placedNow = true;
+      }
+      rows.add(_scheduleTile(provider, day, task, now));
+    }
+    if (!placedNow) rows.add(const ScheduleNowBar());
+    return rows;
+  }
+
+  Widget _scheduleTile(
+    TaskProvider provider,
+    DateTime day,
+    ScheduledTask task,
+    TimeOfDay now,
+  ) {
+    return TaskListItem(
+      task: task,
+      currentTime: now,
+      date: day,
+      calendarList: true,
+      onTap: () => _showOccurrence(task),
+      onSnooze: isSameDay(day, _today)
+          ? () {
+              final undo = provider.snoozeTask(task.id, day);
+              showChangeToast(
+                context,
+                message: 'Snoozed ${task.label} 15 min',
+                onUndo: undo,
+              );
+            }
+          : null,
+      onExtend: isSameDay(day, _today)
+          ? () {
+              final undo = provider.extendTask(task.id, day);
+              showChangeToast(
+                context,
+                message: 'Extended ${task.label} 15 min',
+                onUndo: undo,
+              );
+            }
+          : null,
+      onComplete: isSameDay(day, _today)
+          ? () {
+              final undo = provider.completeTask(task.id, day);
+              showChangeToast(
+                context,
+                message: 'Completed ${task.label}',
+                onUndo: undo,
+              );
+            }
+          : null,
+      onCancel: () {
+        final undo = provider.cancelTask(task.id, day);
+        showChangeToast(
+          context,
+          message: 'Skipped ${task.label}',
+          onUndo: undo,
+        );
+      },
+      onDoNow: isSameDay(day, _today)
+          ? () {
+              final undo = provider.doNowTask(task.id, day, now);
+              showChangeToast(
+                context,
+                message: 'Started ${task.label} now',
+                onUndo: undo,
+              );
+            }
+          : null,
+    );
   }
 
   Widget _dayView(TaskProvider provider, DateTime day) {
@@ -497,7 +581,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
                 child: Column(
                   children: [
-                    _polar(items, size: polarSize, day: day),
+                    _polarWithTime(items, size: polarSize, day: day),
                     const SizedBox(height: 12),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -513,7 +597,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         Expanded(
                           child: AllDayStack(
                             tasks: allDay,
-                            onTaskTap: _showInstance,
+                            onTaskTap: _showOccurrence,
                           ),
                         ),
                       ],
@@ -527,7 +611,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             tasks: items,
                             hourHeight: 44,
                             nowMinutes: _nowMinutesOn(day),
-                            onTaskTap: _showInstance,
+                            onTaskTap: _showOccurrence,
                           ),
                         ),
                       ],
@@ -566,13 +650,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           DateFormat.E().format(day),
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
-                        Text(
-                          '${day.day}',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: isSameDay(day, _today)
-                                    ? FontWeight.w800
-                                    : FontWeight.w500,
-                              ),
+                        const SizedBox(height: 4),
+                        _TodayDayMark(
+                          label: '${day.day}',
+                          today: isSameDay(day, _today),
+                          size: 32,
                         ),
                       ],
                     ),
@@ -602,6 +684,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         Expanded(
                           child: DecoratedBox(
                             decoration: BoxDecoration(
+                              color: isSameDay(days[i], _today)
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withValues(alpha: 0.07)
+                                  : null,
                               border: Border(
                                 right: BorderSide(
                                   color: Theme.of(context)
@@ -613,7 +701,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             child: AllDayStack(
                               tasks: allDayTasks(perDay[i]),
                               compact: true,
-                              onTaskTap: _showInstance,
+                              onTaskTap: _showOccurrence,
                             ),
                           ),
                         ),
@@ -631,6 +719,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       Expanded(
                         child: DecoratedBox(
                           decoration: BoxDecoration(
+                            color: isSameDay(days[i], _today)
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withValues(alpha: 0.07)
+                                : null,
                             border: Border(
                               right: BorderSide(
                                 color: Theme.of(context)
@@ -644,7 +738,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             hourHeight: 28,
                             nowMinutes: _nowMinutesOn(days[i]),
                             compact: true,
-                            onTaskTap: _showInstance,
+                            onTaskTap: _showOccurrence,
                           ),
                         ),
                       ),
@@ -769,6 +863,102 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 }
 
+class _TodayHalo extends StatelessWidget {
+  final double size;
+  final bool showRing;
+  final Widget? hub;
+  final Widget child;
+
+  const _TodayHalo({
+    required this.size,
+    required this.showRing,
+    required this.child,
+    this.hub,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          child,
+          if (showRing)
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: scheme.primary, width: 2),
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          if (hub != null)
+            IgnorePointer(
+              child: SizedBox(
+                width: size * 0.34,
+                height: size * 0.34,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.primary,
+                  ),
+                  child: DefaultTextStyle.merge(
+                    style: TextStyle(color: scheme.onPrimary),
+                    child: Center(child: hub),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TodayDayMark extends StatelessWidget {
+  final String label;
+  final bool today;
+  final double size;
+
+  const _TodayDayMark({
+    required this.label,
+    required this.today,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: DecoratedBox(
+        decoration: today
+            ? BoxDecoration(
+                shape: BoxShape.circle,
+                color: scheme.primary,
+                border: Border.all(color: scheme.primary, width: 2),
+              )
+            : const BoxDecoration(),
+        child: Center(
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: today ? FontWeight.w800 : FontWeight.w500,
+                  color: today ? scheme.onPrimary : null,
+                  height: 1,
+                ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MonthDayCell extends StatelessWidget {
   final int dayNum;
   final double size;
@@ -785,49 +975,34 @@ class _MonthDayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final label = Text(
-      '$dayNum',
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            fontWeight: today ? FontWeight.w800 : FontWeight.w700,
-            fontSize: size * 0.18,
-            height: 1,
-            color: today ? scheme.onPrimary : scheme.onSurface,
-          ),
-    );
-
-    return SizedBox(
-      width: size,
-      height: size,
+    return _TodayHalo(
+      size: size,
+      showRing: today,
+      hub: today
+          ? Text(
+              '$dayNum',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    fontSize: size * 0.18,
+                    height: 1,
+                    color: scheme.onPrimary,
+                  ),
+            )
+          : null,
       child: Stack(
         alignment: Alignment.center,
         children: [
           polar,
-          if (today)
-            IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: scheme.primary, width: 2),
-                ),
-                child: const SizedBox.expand(),
-              ),
-            ),
-          if (today)
-            IgnorePointer(
-              child: SizedBox(
-                width: size * 0.34,
-                height: size * 0.34,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: scheme.primary,
+          if (!today)
+            Text(
+              '$dayNum',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: size * 0.18,
+                    height: 1,
+                    color: scheme.onSurface,
                   ),
-                  child: Center(child: label),
-                ),
-              ),
-            )
-          else
-            label,
+            ),
         ],
       ),
     );
@@ -868,10 +1043,22 @@ class _MonthHeat extends StatelessWidget {
         final day = DateTime(year, month, i - lead + 1);
         final n = counts[dateKey(day)] ?? 0;
         final t = n == 0 ? 0.0 : (n / maxCount).clamp(0.18, 1.0);
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: n == 0 ? empty : primary.withOpacity(t),
-            borderRadius: BorderRadius.circular(1.5),
+        final today = isSameDay(day, DateTime.now());
+        return Padding(
+          padding: const EdgeInsets.all(0.6),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: today && n == 0
+                    ? primary.withValues(alpha: 0.22)
+                    : n == 0
+                        ? empty
+                        : primary.withOpacity(t),
+                border: today ? Border.all(color: primary, width: 1.5) : null,
+              ),
+            ),
           ),
         );
       },

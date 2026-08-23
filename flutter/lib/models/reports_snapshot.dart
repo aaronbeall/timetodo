@@ -43,7 +43,7 @@ class TaskSeriesStats {
 
   int get unresolved => total - completed - skipped;
 
-  /// Completions among non-skipped instances.
+  /// Completions among non-skipped occurrences.
   double? get completionRate {
     final denom = completed + unresolved;
     if (denom == 0) return null;
@@ -77,7 +77,7 @@ class ReportsSnapshot {
     required this.taskStreaks,
   });
 
-  /// Completions among non-skipped instances.
+  /// Completions among non-skipped occurrences.
   double? get completionRate {
     final denom = completed + unresolved;
     if (denom == 0) return null;

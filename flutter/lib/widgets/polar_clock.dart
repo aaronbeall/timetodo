@@ -419,6 +419,48 @@ class _RenderArcHit extends RenderProxyBox {
   }
 }
 
+class _PolarMetrics {
+  final double hourTrackWidth;
+  final double hourTrackRadius;
+  final double tracksInner;
+  final double tracksOuter;
+  final double nowInnerRadius;
+  final double shaftWidth;
+  final double tipRadius;
+
+  const _PolarMetrics({
+    required this.hourTrackWidth,
+    required this.hourTrackRadius,
+    required this.tracksInner,
+    required this.tracksOuter,
+    required this.nowInnerRadius,
+    required this.shaftWidth,
+    required this.tipRadius,
+  });
+
+  factory _PolarMetrics.of(Size size) {
+    final maxRadius = math.min(size.width, size.height) / 2;
+    final holeRadius = maxRadius * 0.22;
+    final hourTrackWidth = math.max(6.0, maxRadius * 0.035);
+    final hourTrackRadius = holeRadius + hourTrackWidth / 2;
+    final tracksInner = hourTrackRadius + hourTrackWidth / 2 + 3;
+    final nowInnerRadius = hourTrackRadius - hourTrackWidth / 2;
+    final shaftWidth = math.max(3.0, (maxRadius - nowInnerRadius) * 0.018);
+    final tipRadius = shaftWidth * 1.15;
+    final capPad = tipRadius + 1.6;
+    final tracksOuter = maxRadius - capPad;
+    return _PolarMetrics(
+      hourTrackWidth: hourTrackWidth,
+      hourTrackRadius: hourTrackRadius,
+      tracksInner: tracksInner,
+      tracksOuter: tracksOuter,
+      nowInnerRadius: nowInnerRadius,
+      shaftWidth: shaftWidth,
+      tipRadius: tipRadius,
+    );
+  }
+}
+
 class PolarClockPainter extends CustomPainter {
   static const _minutesPerDay = 24 * 60;
 
@@ -446,13 +488,10 @@ class PolarClockPainter extends CustomPainter {
   double _angleForMinutes(num minutes) => angleForMinutes(minutes);
 
   static String? idAt(Offset position, Size size, List<_ArcGeom> arcs) {
+    final m = _PolarMetrics.of(size);
     final center = Offset(size.width / 2, size.height / 2);
-    final maxRadius = math.min(size.width, size.height) / 2;
-    final holeRadius = maxRadius * 0.22;
-    final hourTrackWidth = math.max(6.0, maxRadius * 0.035);
-    final hourTrackRadius = holeRadius + hourTrackWidth / 2;
-    final tracksInner = hourTrackRadius + hourTrackWidth / 2 + 3;
-    final tracksOuter = maxRadius - 2;
+    final tracksInner = m.tracksInner;
+    final tracksOuter = m.tracksOuter;
     if (tracksOuter <= tracksInner) return null;
 
     final delta = position - center;
@@ -489,23 +528,18 @@ class PolarClockPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final m = _PolarMetrics.of(size);
     final center = Offset(size.width / 2, size.height / 2);
-    final maxRadius = math.min(size.width, size.height) / 2;
-    final holeRadius = maxRadius * 0.22;
-    final hourTrackWidth = math.max(6.0, maxRadius * 0.035);
-    final hourTrackRadius = holeRadius + hourTrackWidth / 2;
-    final tracksInner = hourTrackRadius + hourTrackWidth / 2 + 3;
-    final tracksOuter = maxRadius - 2;
 
-    _drawHourTrack(canvas, center, hourTrackRadius, hourTrackWidth);
+    _drawHourTrack(canvas, center, m.hourTrackRadius, m.hourTrackWidth);
 
-    if (tracksOuter > tracksInner) {
+    if (m.tracksOuter > m.tracksInner) {
       final visible = arcs.where((a) => a.opacity > 0.015 && a.duration > 0.4);
       if (visible.isEmpty) {
-        _drawGhostHourTracks(canvas, center, tracksInner, tracksOuter);
+        _drawGhostHourTracks(canvas, center, m.tracksInner, m.tracksOuter);
       } else {
         for (final arc in visible) {
-          _drawTaskTrack(canvas, center, tracksInner, tracksOuter, arc);
+          _drawTaskTrack(canvas, center, m.tracksInner, m.tracksOuter, arc);
         }
       }
     }
@@ -514,8 +548,10 @@ class PolarClockPainter extends CustomPainter {
       _drawNowIndicator(
         canvas,
         center,
-        hourTrackRadius - hourTrackWidth / 2,
-        maxRadius,
+        m.nowInnerRadius,
+        m.tracksOuter,
+        m.shaftWidth,
+        m.tipRadius,
       );
     }
   }
@@ -658,14 +694,13 @@ class PolarClockPainter extends CustomPainter {
     Canvas canvas,
     Offset center,
     double innerRadius,
-    double outerRadius,
+    double trackOuterRadius,
+    double shaftWidth,
+    double tipRadius,
   ) {
     final minutes = currentTime.hour * 60 + currentTime.minute;
     final angle = _angleForMinutes(minutes);
-    final shaftWidth = math.max(3.0, (outerRadius - innerRadius) * 0.018);
-    final tipRadius = shaftWidth * 1.15;
-    final haloRadius = tipRadius + 1.6;
-    final tipCenter = outerRadius - haloRadius - 1;
+    final tipCenter = trackOuterRadius;
     final shaftEnd = tipCenter - tipRadius * 0.35;
 
     canvas.save();

@@ -354,6 +354,34 @@ class _TimelineNowHandPainter extends CustomPainter {
       oldDelegate.nowColor != nowColor || oldDelegate.nowOnColor != nowOnColor;
 }
 
+class ScheduleNowBar extends StatelessWidget {
+  const ScheduleNowBar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = TimeOfDay.now();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: SizedBox(
+        height: 22,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 40,
+              child: AxisCaption(
+                text: formatAxisTime(minutesOf(now)),
+                twoLine: true,
+              ),
+            ),
+            const SizedBox(width: 2),
+            const Expanded(child: TimelineNowHand()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AxisCaption extends StatelessWidget {
   final String text;
   final bool twoLine;
