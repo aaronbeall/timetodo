@@ -418,6 +418,7 @@ class _TodayScreenState extends State<TodayScreen> {
               child: TaskListItem(
                 task: task,
                 currentTime: _currentTime,
+                date: _currentDate,
                 showShadow: shadow,
                 onTap: () => _showSummary(task),
                 onSnooze: () {

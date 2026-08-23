@@ -39,10 +39,121 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
+  static const _pageCenter = 50000;
+
   _CalSpan _span = _CalSpan.month;
   DateTime _focus = DateTime.now();
+  late DateTime _pageOrigin;
+  late PageController _pager;
 
   DateTime get _today => dateOnly(DateTime.now());
+
+  @override
+  void initState() {
+    super.initState();
+    _pageOrigin = _periodAnchor(_focus);
+    _pager = PageController(initialPage: _pageCenter);
+  }
+
+  @override
+  void dispose() {
+    _pager.dispose();
+    super.dispose();
+  }
+
+  DateTime _periodAnchor(DateTime d) {
+    final day = dateOnly(d);
+    switch (_span) {
+      case _CalSpan.schedule:
+      case _CalSpan.day:
+        return day;
+      case _CalSpan.week:
+        return day.subtract(Duration(days: day.weekday % 7));
+      case _CalSpan.month:
+        return DateTime(day.year, day.month, 1);
+      case _CalSpan.year:
+        return DateTime(day.year, 1, 1);
+    }
+  }
+
+  DateTime _dateForPage(int page) {
+    final n = page - _pageCenter;
+    final o = _pageOrigin;
+    switch (_span) {
+      case _CalSpan.schedule:
+      case _CalSpan.day:
+        return o.add(Duration(days: n));
+      case _CalSpan.week:
+        return o.add(Duration(days: 7 * n));
+      case _CalSpan.month:
+        return DateTime(o.year, o.month + n, 1);
+      case _CalSpan.year:
+        return DateTime(o.year + n, 1, 1);
+    }
+  }
+
+  int _pageForDate(DateTime d) {
+    final a = _periodAnchor(d);
+    final o = _pageOrigin;
+    switch (_span) {
+      case _CalSpan.schedule:
+      case _CalSpan.day:
+        return _pageCenter + a.difference(o).inDays;
+      case _CalSpan.week:
+        return _pageCenter + a.difference(o).inDays ~/ 7;
+      case _CalSpan.month:
+        return _pageCenter + (a.year - o.year) * 12 + a.month - o.month;
+      case _CalSpan.year:
+        return _pageCenter + a.year - o.year;
+    }
+  }
+
+  void _replacePager() {
+    _pageOrigin = _periodAnchor(_focus);
+    _pager.dispose();
+    _pager = PageController(initialPage: _pageCenter);
+  }
+
+  void _setSpan(_CalSpan span, {DateTime? focus}) {
+    setState(() {
+      if (focus != null) _focus = focus;
+      if (span != _span) {
+        _span = span;
+        _replacePager();
+      }
+    });
+  }
+
+  void _goTo(DateTime day, {bool animate = true}) {
+    final target = dateOnly(day);
+    if (!_pager.hasClients) {
+      setState(() => _focus = target);
+      return;
+    }
+    final page = _pageForDate(target);
+    final current = _pager.page?.round() ?? _pageCenter;
+    if (!animate || (page - current).abs() > 2) {
+      _pager.jumpToPage(page);
+    } else {
+      _pager.animateToPage(
+        page,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _onPageChanged(int page) {
+    final day = _dateForPage(page);
+    final next = _periodAnchor(day);
+    final cur = _periodAnchor(_focus);
+    if (next.year == cur.year &&
+        next.month == cur.month &&
+        next.day == cur.day) {
+      return;
+    }
+    setState(() => _focus = day);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +177,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               tooltip: 'Today',
               onPressed: _isCurrentPeriod
                   ? null
-                  : () => setState(() => _focus = DateTime.now()),
+                  : () => _goTo(_today),
               icon: const Icon(Icons.today),
             ),
             Expanded(
@@ -83,7 +194,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           PopupMenuButton<_CalSpan>(
             initialValue: _span,
             tooltip: 'Calendar view',
-            onSelected: (span) => setState(() => _span = span),
+            onSelected: (span) => _setSpan(span),
             itemBuilder: (context) => [
               for (final span in _CalSpan.values)
                 PopupMenuItem(
@@ -116,22 +227,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: _body(provider),
+      body: PageView.builder(
+        key: ValueKey(_span),
+        controller: _pager,
+        onPageChanged: _onPageChanged,
+        itemBuilder: (context, page) => _body(provider, _dateForPage(page)),
+      ),
     );
   }
 
-  Widget _body(TaskProvider provider) {
+  Widget _body(TaskProvider provider, DateTime day) {
     switch (_span) {
       case _CalSpan.schedule:
-        return _scheduleView(provider);
+        return _scheduleView(provider, day);
       case _CalSpan.day:
-        return _dayView(provider);
+        return _dayView(provider, day);
       case _CalSpan.week:
-        return _weekView(provider);
+        return _weekView(provider, day);
       case _CalSpan.month:
-        return _monthView(provider);
+        return _monthView(provider, day);
       case _CalSpan.year:
-        return _yearView(provider);
+        return _yearView(provider, day);
     }
   }
 
@@ -188,19 +304,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _step(int direction) {
-    setState(() {
-      switch (_span) {
-        case _CalSpan.schedule:
-        case _CalSpan.day:
-          _focus = _focus.add(Duration(days: direction));
-        case _CalSpan.week:
-          _focus = _focus.add(Duration(days: 7 * direction));
-        case _CalSpan.month:
-          _focus = DateTime(_focus.year, _focus.month + direction, 1);
-        case _CalSpan.year:
-          _focus = DateTime(_focus.year + direction, 1, 1);
-      }
-    });
+    _goTo(_shifted(_focus, direction));
+  }
+
+  DateTime _shifted(DateTime from, int direction) {
+    switch (_span) {
+      case _CalSpan.schedule:
+      case _CalSpan.day:
+        return from.add(Duration(days: direction));
+      case _CalSpan.week:
+        return from.add(Duration(days: 7 * direction));
+      case _CalSpan.month:
+        return DateTime(from.year, from.month + direction, 1);
+      case _CalSpan.year:
+        return DateTime(from.year + direction, 1, 1);
+    }
   }
 
   int? _nowMinutesOn(DateTime day) {
@@ -234,8 +352,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _scheduleView(TaskProvider provider) {
-    final items = provider.scheduledOn(_focus)
+  Widget _scheduleView(TaskProvider provider, DateTime day) {
+    final items = provider.scheduledOn(day)
       ..sort((a, b) {
         if (a.isAllDay && !b.isAllDay) return -1;
         if (!a.isAllDay && b.isAllDay) return 1;
@@ -250,7 +368,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 children: [
-                  Center(child: _polar(items, size: polarSize, day: _focus)),
+                  Center(child: _polar(items, size: polarSize, day: day)),
                   const SizedBox(height: 16),
                   if (items.isEmpty)
                     Padding(
@@ -272,48 +390,64 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       TaskListItem(
                         task: task,
                         currentTime: now,
+                        date: day,
+                        calendarList: true,
                         onTap: () => _showInstance(task),
-                        onSnooze: () {
-                          final undo = provider.snoozeTask(task.id, _focus);
-                          showChangeToast(
-                            context,
-                            message: 'Snoozed ${task.label} 15 min',
-                            onUndo: undo,
-                          );
-                        },
-                        onExtend: () {
-                          final undo = provider.extendTask(task.id, _focus);
-                          showChangeToast(
-                            context,
-                            message: 'Extended ${task.label} 15 min',
-                            onUndo: undo,
-                          );
-                        },
-                        onComplete: () {
-                          final undo = provider.completeTask(task.id, _focus);
-                          showChangeToast(
-                            context,
-                            message: 'Completed ${task.label}',
-                            onUndo: undo,
-                          );
-                        },
+                        onSnooze: isSameDay(day, _today)
+                            ? () {
+                                final undo =
+                                    provider.snoozeTask(task.id, day);
+                                showChangeToast(
+                                  context,
+                                  message: 'Snoozed ${task.label} 15 min',
+                                  onUndo: undo,
+                                );
+                              }
+                            : null,
+                        onExtend: isSameDay(day, _today)
+                            ? () {
+                                final undo =
+                                    provider.extendTask(task.id, day);
+                                showChangeToast(
+                                  context,
+                                  message: 'Extended ${task.label} 15 min',
+                                  onUndo: undo,
+                                );
+                              }
+                            : null,
+                        onComplete: isSameDay(day, _today)
+                            ? () {
+                                final undo =
+                                    provider.completeTask(task.id, day);
+                                showChangeToast(
+                                  context,
+                                  message: 'Completed ${task.label}',
+                                  onUndo: undo,
+                                );
+                              }
+                            : null,
                         onCancel: () {
-                          final undo = provider.cancelTask(task.id, _focus);
+                          final undo = provider.cancelTask(task.id, day);
                           showChangeToast(
                             context,
                             message: 'Skipped ${task.label}',
                             onUndo: undo,
                           );
                         },
-                        onDoNow: () {
-                          final undo =
-                              provider.doNowTask(task.id, _focus, now);
-                          showChangeToast(
-                            context,
-                            message: 'Started ${task.label} now',
-                            onUndo: undo,
-                          );
-                        },
+                        onDoNow: isSameDay(day, _today)
+                            ? () {
+                                final undo = provider.doNowTask(
+                                  task.id,
+                                  day,
+                                  now,
+                                );
+                                showChangeToast(
+                                  context,
+                                  message: 'Started ${task.label} now',
+                                  onUndo: undo,
+                                );
+                              }
+                            : null,
                       ),
                 ],
               );
@@ -321,8 +455,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           );
   }
 
-  Widget _dayView(TaskProvider provider) {
-    final items = provider.scheduledOn(_focus);
+  Widget _dayView(TaskProvider provider, DateTime day) {
+    final items = provider.scheduledOn(day);
     final allDay = allDayTasks(items);
     return LayoutBuilder(
             builder: (context, constraints) {
@@ -332,7 +466,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
                 child: Column(
                   children: [
-                    _polar(items, size: polarSize, day: _focus),
+                    _polar(items, size: polarSize, day: day),
                     const SizedBox(height: 12),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,7 +495,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           child: DayTimeline(
                             tasks: items,
                             hourHeight: 44,
-                            nowMinutes: _nowMinutesOn(_focus),
+                            nowMinutes: _nowMinutesOn(day),
                             onTaskTap: _showInstance,
                           ),
                         ),
@@ -374,9 +508,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
           );
   }
 
-  Widget _weekView(TaskProvider provider) {
-    final start = dateOnly(_focus)
-        .subtract(Duration(days: dateOnly(_focus).weekday % 7));
+  Widget _weekView(TaskProvider provider, DateTime focus) {
+    final start = dateOnly(focus)
+        .subtract(Duration(days: dateOnly(focus).weekday % 7));
     final days = List.generate(7, (i) => start.add(Duration(days: i)));
     final perDay = [for (final d in days) provider.scheduledOn(d)];
     final allDayCounts = [
@@ -394,10 +528,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               for (final day in days)
                 Expanded(
                   child: InkWell(
-                    onTap: () => setState(() {
-                      _focus = day;
-                      _span = _CalSpan.day;
-                    }),
+                    onTap: () => _setSpan(_CalSpan.day, focus: day),
                     child: Column(
                       children: [
                         Text(
@@ -493,10 +624,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _monthView(TaskProvider provider) {
-    final first = DateTime(_focus.year, _focus.month, 1);
+  Widget _monthView(TaskProvider provider, DateTime day) {
+    final first = DateTime(day.year, day.month, 1);
     final lead = first.weekday % 7;
-    final daysInMonth = DateTime(_focus.year, _focus.month + 1, 0).day;
+    final daysInMonth = DateTime(day.year, day.month + 1, 0).day;
     final rows = ((lead + daysInMonth) / 7).ceil();
     return Column(
       children: [
@@ -528,14 +659,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
               if (dayNum < 1 || dayNum > daysInMonth) {
                 return const SizedBox.shrink();
               }
-              final day = DateTime(_focus.year, _focus.month, dayNum);
-              final items = provider.scheduledOn(day);
-              final today = isSameDay(day, _today);
+              final cell = DateTime(day.year, day.month, dayNum);
+              final items = provider.scheduledOn(cell);
+              final today = isSameDay(cell, _today);
               return InkWell(
-                onTap: () => setState(() {
-                  _focus = day;
-                  _span = _CalSpan.day;
-                }),
+                onTap: () => _setSpan(_CalSpan.day, focus: cell),
                 child: LayoutBuilder(
                   builder: (context, box) {
                     final size = box.biggest.shortestSide;
@@ -553,7 +681,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             ),
                             child: const SizedBox.expand(),
                           ),
-                        _polar(items, size: size, day: day),
+                        _polar(items, size: size, day: cell),
                         Text(
                           '$dayNum',
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -573,15 +701,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _yearView(TaskProvider provider) {
+  Widget _yearView(TaskProvider provider, DateTime focus) {
     var maxCount = 1;
     final counts = <String, int>{};
     for (var m = 1; m <= 12; m++) {
-      final last = DateTime(_focus.year, m + 1, 0).day;
+      final last = DateTime(focus.year, m + 1, 0).day;
       for (var d = 1; d <= last; d++) {
-        final day = DateTime(_focus.year, m, d);
-        final n = provider.scheduledOn(day).length;
-        counts[dateKey(day)] = n;
+        final date = DateTime(focus.year, m, d);
+        final n = provider.scheduledOn(date).length;
+        counts[dateKey(date)] = n;
         if (n > maxCount) maxCount = n;
       }
     }
@@ -596,12 +724,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
             itemCount: 12,
             itemBuilder: (context, m) {
-              final month = DateTime(_focus.year, m + 1, 1);
+              final month = DateTime(focus.year, m + 1, 1);
               return InkWell(
-                onTap: () => setState(() {
-                  _focus = month;
-                  _span = _CalSpan.month;
-                }),
+                onTap: () => _setSpan(_CalSpan.month, focus: month),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -612,7 +737,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     const SizedBox(height: 6),
                     Expanded(
                       child: _MonthHeat(
-                        year: _focus.year,
+                        year: focus.year,
                         month: m + 1,
                         counts: counts,
                         maxCount: maxCount,

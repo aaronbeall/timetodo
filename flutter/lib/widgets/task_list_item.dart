@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:timetodo/models/scheduled_task.dart';
+import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/flip_host.dart';
 
 class TaskListItem extends StatelessWidget {
   final ScheduledTask task;
   final TimeOfDay currentTime;
+  final DateTime date;
+  final bool calendarList;
   final VoidCallback? onSnooze;
   final VoidCallback? onExtend;
   final VoidCallback? onComplete;
@@ -26,6 +29,8 @@ class TaskListItem extends StatelessWidget {
     super.key,
     required this.task,
     required this.currentTime,
+    required this.date,
+    this.calendarList = false,
     this.onSnooze,
     this.onExtend,
     this.onComplete,
@@ -35,11 +40,19 @@ class TaskListItem extends StatelessWidget {
     this.showShadow = false,
   });
 
-  bool get _isActive => task.isActive(currentTime);
-  bool get _isMissed => task.isMissed(currentTime);
+  bool get _isToday => isSameDay(date, DateTime.now());
+  bool get _live => !calendarList || _isToday;
+  bool get _isActive => _live && task.isActive(currentTime);
+  bool get _isMissed => _live && task.isMissed(currentTime);
   bool get _isDone => task.isCompleted || task.isCanceled;
   bool get _isAllDay => task.isAllDay;
-  bool get _isStruck => _isDone || _isMissed;
+  bool get _isStruck =>
+      calendarList ? task.isCanceled : (_isDone || _isMissed);
+
+  DateTime _onDate(TimeOfDay time, {int extraDays = 0}) {
+    final day = dateOnly(date).add(Duration(days: extraDays));
+    return DateTime(day.year, day.month, day.day, time.hour, time.minute);
+  }
 
   String _formatTime(TimeOfDay time) {
     final hour = time.hour;
@@ -67,14 +80,21 @@ class TaskListItem extends StatelessWidget {
   String _formatDuration(int minutes) {
     if (minutes < 1) return 'now';
     if (minutes < 60) return '$minutes min';
-    final hours = minutes ~/ 60;
-    final rest = minutes % 60;
+    final days = minutes ~/ (24 * 60);
+    final afterDays = minutes % (24 * 60);
+    final hours = afterDays ~/ 60;
+    final rest = afterDays % 60;
+    if (days > 0) {
+      final dayPart = days == 1 ? '1 day' : '$days days';
+      if (hours == 0) return dayPart;
+      return hours == 1 ? '$dayPart 1 hr' : '$dayPart $hours hr';
+    }
     if (rest == 0) return hours == 1 ? '1 hr' : '$hours hr';
     return '$hours hr $rest min';
   }
 
   String _exactTimeLabel() {
-    if (_isAllDay) return '';
+    if (_isAllDay) return calendarList ? 'All day' : '';
     if (task.startTime != null && task.endTime != null) {
       return '${_formatTime(task.startTime!)}–${_formatTime(task.endTime!)}';
     }
@@ -83,8 +103,20 @@ class TaskListItem extends StatelessWidget {
   }
 
   String _relativeTimeLabel() {
-    if (_isAllDay) return 'All day';
+    if (_isAllDay) {
+      if (!calendarList) return 'All day';
+      final days = dateOnly(date).difference(dateOnly(DateTime.now())).inDays;
+      if (days == 0) return '';
+      if (days == 1) return 'tomorrow';
+      if (days == -1) return 'yesterday';
+      if (days > 1) return 'in $days days';
+      return '${-days} days ago';
+    }
     if (task.startTime == null) return '';
+
+    if (calendarList) {
+      return _calendarRelativeLabel();
+    }
 
     if (_isActive && task.endTime != null) {
       final left = _minutesUntil(task.endTime!);
@@ -102,6 +134,39 @@ class TaskListItem extends StatelessWidget {
 
     if (task.endTime != null) {
       final ago = _minutesSince(task.endTime!);
+      if (ago < 1) return 'just ended';
+      return '${_formatDuration(ago)} ago';
+    }
+
+    return '';
+  }
+
+  String _calendarRelativeLabel() {
+    final now = DateTime.now();
+    var start = _onDate(task.startTime!);
+    DateTime? end;
+    if (task.endTime != null) {
+      end = _onDate(task.endTime!);
+      if (!end.isAfter(start)) {
+        end = _onDate(task.endTime!, extraDays: 1);
+      }
+    }
+
+    if (_isToday && _isActive && end != null) {
+      final left = end.difference(now).inMinutes;
+      if (left < 1) return 'ending now';
+      return '${_formatDuration(left)} left';
+    }
+
+    if (now.isBefore(start)) {
+      final until = start.difference(now).inMinutes;
+      if (until < 1) return 'starting now';
+      return 'in ${_formatDuration(until)}';
+    }
+
+    final mark = end ?? start;
+    if (!now.isBefore(mark)) {
+      final ago = now.difference(mark).inMinutes;
       if (ago < 1) return 'just ended';
       return '${_formatDuration(ago)} ago';
     }
@@ -199,7 +264,7 @@ class TaskListItem extends StatelessWidget {
         child: Stack(
           children: [
             Positioned.fill(child: ColoredBox(color: wash)),
-            if (_isActive || (_isAllDay && !_isDone))
+            if (_live && (_isActive || (_isAllDay && !_isDone)))
               Positioned.fill(
                 child: Align(
                   alignment: Alignment.centerLeft,
@@ -272,8 +337,13 @@ class TaskListItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (relative.isNotEmpty) Text(relative, style: timeStyle),
-                if (exact.isNotEmpty) Text(exact, style: exactStyle),
+                if (calendarList) ...[
+                  if (exact.isNotEmpty) Text(exact, style: timeStyle),
+                  if (relative.isNotEmpty) Text(relative, style: exactStyle),
+                ] else ...[
+                  if (relative.isNotEmpty) Text(relative, style: timeStyle),
+                  if (exact.isNotEmpty) Text(exact, style: exactStyle),
+                ],
               ],
             ),
             const SizedBox(width: 6),
