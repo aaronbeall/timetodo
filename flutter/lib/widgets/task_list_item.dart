@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:timetodo/models/task.dart';
+import 'package:timetodo/widgets/flip_host.dart';
 
 class TaskListItem extends StatelessWidget {
   final Task task;
@@ -161,8 +162,13 @@ class TaskListItem extends StatelessWidget {
 
     final relative = _relativeTimeLabel();
     final exact = _exactTimeLabel();
+    final reduce = MediaQuery.disableAnimationsOf(context);
 
-    return Padding(
+    return AnimatedSize(
+      duration: reduce ? Duration.zero : kTaskListAnimDuration,
+      curve: kTaskListAnimCurve,
+      alignment: Alignment.topCenter,
+      child: Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -310,6 +316,7 @@ class TaskListItem extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
       ),
     );

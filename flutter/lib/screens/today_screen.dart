@@ -11,6 +11,7 @@ import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_list_item.dart';
 import 'package:timetodo/widgets/add_task_dialog.dart';
 import 'package:timetodo/widgets/change_toast.dart';
+import 'package:timetodo/widgets/flip_host.dart';
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -39,6 +40,7 @@ class _TodayScreenState extends State<TodayScreen> {
   int _fanCount = 0;
   double? _fanDocTop;
   bool? _fanClippedAtRest;
+  final _flipKeys = <String, GlobalKey>{};
 
   @override
   void initState() {
@@ -345,7 +347,18 @@ class _TodayScreenState extends State<TodayScreen> {
           ]..sort((a, b) => _recencyMinutes(a).compareTo(_recencyMinutes(b)));
           final fanTasks = [...upcoming, ...settled];
 
-          Widget item(Task task, {bool shadow = false}) => TaskListItem(
+          final liveIds = todayTasks.map((t) => t.id).toSet();
+          _flipKeys.removeWhere((id, _) => !liveIds.contains(id));
+
+          Widget item(
+            Task task, {
+            bool shadow = false,
+            required String token,
+          }) {
+            return FlipHost(
+              key: _flipKeys.putIfAbsent(task.id, GlobalKey.new),
+              token: token,
+              child: TaskListItem(
                 task: task,
                 currentTime: _currentTime,
                 showShadow: shadow,
@@ -391,7 +404,9 @@ class _TodayScreenState extends State<TodayScreen> {
                   );
                   _scrollToTop();
                 },
-              );
+              ),
+            );
+          }
 
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -425,9 +440,15 @@ class _TodayScreenState extends State<TodayScreen> {
               _collapsedH = collapsed;
               _travel = math.max(1.0, travel);
 
-              final fanChildren = fanTasks
-                  .map((task) => item(task, shadow: true))
-                  .toList();
+              final fanChildren = [
+                for (var i = 0; i < fanTasks.length; i++)
+                  item(
+                    fanTasks[i],
+                    shadow: true,
+                    token:
+                        'fan:$i:${TaskListItem.stackExtentFor(fanTasks[i])}:${_startMinutes(fanTasks[i])}',
+                  ),
+              ];
 
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 _updateFanFromScroll();
@@ -446,10 +467,32 @@ class _TodayScreenState extends State<TodayScreen> {
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                             sliver: SliverList(
                               delegate: SliverChildListDelegate([
-                                ...active.map(item),
-                                ...allDayOpen.map(item),
-                                if (hasConnector)
-                                  const _ActiveUpcomingConnector(),
+                                ...[
+                                  for (var i = 0; i < active.length; i++)
+                                    item(
+                                      active[i],
+                                      token:
+                                          'active:$i:${_startMinutes(active[i])}',
+                                    ),
+                                ],
+                                ...[
+                                  for (var i = 0; i < allDayOpen.length; i++)
+                                    item(
+                                      allDayOpen[i],
+                                      token: 'allday:$i',
+                                    ),
+                                ],
+                                AnimatedSize(
+                                  duration: MediaQuery.disableAnimationsOf(
+                                            context,
+                                          )
+                                      ? Duration.zero
+                                      : kTaskListAnimDuration,
+                                  curve: kTaskListAnimCurve,
+                                  child: hasConnector
+                                      ? const _ActiveUpcomingConnector()
+                                      : const SizedBox.shrink(),
+                                ),
                                 if (fanTasks.isNotEmpty)
                                   KeyedSubtree(
                                     key: _fanKey,
