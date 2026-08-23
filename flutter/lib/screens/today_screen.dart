@@ -5,18 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:timetodo/data/demo_schedule.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/providers/task_provider.dart';
+import 'package:timetodo/screens/settings_screen.dart';
 import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_list_item.dart';
 import 'package:timetodo/widgets/add_task_dialog.dart';
 import 'package:timetodo/widgets/change_toast.dart';
 import 'package:timetodo/widgets/flip_host.dart';
 import 'package:timetodo/widgets/task_summary_sheet.dart';
-
-enum _TestDataChoice { light, typical, packed, clear }
 
 class TodayScreen extends StatefulWidget {
   final ValueChanged<Task>? onEditTask;
@@ -319,61 +317,10 @@ class _TodayScreenState extends State<TodayScreen> {
               _buildDateTitle(context),
               Align(
                 alignment: Alignment.centerRight,
-                child: PopupMenuButton<_TestDataChoice>(
-                  tooltip: 'Test schedule',
-                  onSelected: (choice) {
-                    final provider = context.read<TaskProvider>();
-                    if (choice == _TestDataChoice.clear) {
-                      final undo = provider.clearAllData();
-                      showChangeToast(
-                        context,
-                        message: 'Cleared all data',
-                        onUndo: undo,
-                      );
-                      return;
-                    }
-                    final kind = switch (choice) {
-                      _TestDataChoice.light => DemoScheduleKind.light,
-                      _TestDataChoice.typical => DemoScheduleKind.typical,
-                      _TestDataChoice.packed => DemoScheduleKind.packed,
-                      _TestDataChoice.clear => DemoScheduleKind.light,
-                    };
-                    final undo = provider.loadDemoSchedule(kind);
-                    final label = switch (choice) {
-                      _TestDataChoice.light => 'Light day',
-                      _TestDataChoice.typical => 'Typical day',
-                      _TestDataChoice.packed => 'Packed day',
-                      _TestDataChoice.clear => '',
-                    };
-                    showChangeToast(
-                      context,
-                      message: 'Loaded $label',
-                      onUndo: undo,
-                    );
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: _TestDataChoice.light,
-                      child: Text('Light day'),
-                    ),
-                    PopupMenuItem(
-                      value: _TestDataChoice.typical,
-                      child: Text('Typical day'),
-                    ),
-                    PopupMenuItem(
-                      value: _TestDataChoice.packed,
-                      child: Text('Packed day'),
-                    ),
-                    PopupMenuDivider(),
-                    PopupMenuItem(
-                      value: _TestDataChoice.clear,
-                      child: Text('Clear all data'),
-                    ),
-                  ],
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('Test schedule'),
-                  ),
+                child: IconButton(
+                  tooltip: 'Settings',
+                  onPressed: () => openSettings(context),
+                  icon: const Icon(Icons.settings_outlined),
                 ),
               ),
             ],

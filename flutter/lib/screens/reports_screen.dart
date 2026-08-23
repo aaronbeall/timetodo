@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:timetodo/providers/task_provider.dart';
+import 'package:timetodo/screens/settings_screen.dart';
 import 'package:timetodo/time_utils.dart';
 
 class ReportsScreen extends StatelessWidget {
@@ -33,6 +34,13 @@ class ReportsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Reports'),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            onPressed: () => openSettings(context),
+            icon: const Icon(Icons.settings_outlined),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),

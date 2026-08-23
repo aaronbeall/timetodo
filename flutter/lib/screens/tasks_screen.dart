@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
+import 'package:timetodo/screens/settings_screen.dart';
 import 'package:timetodo/widgets/task_editor.dart';
 import 'package:timetodo/widgets/task_time_arc.dart';
 import 'package:timetodo/widgets/add_task_dialog.dart';
@@ -97,6 +98,13 @@ class _TasksScreenState extends State<TasksScreen> {
       appBar: AppBar(
         title: const Text('Tasks'),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            onPressed: () => openSettings(context),
+            icon: const Icon(Icons.settings_outlined),
+          ),
+        ],
       ),
       body: Consumer<TaskProvider>(
         builder: (context, taskProvider, child) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:timetodo/data/local_task_store.dart';
 import 'package:timetodo/providers/task_provider.dart';
+import 'package:timetodo/providers/theme_controller.dart';
 import 'package:timetodo/screens/today_screen.dart';
 import 'package:timetodo/screens/tasks_screen.dart';
 import 'package:timetodo/screens/calendar_screen.dart';
@@ -34,31 +35,47 @@ class TimeToDoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) {
-        final provider = TaskProvider(LocalTaskStore());
-        provider.load();
-        return provider;
-      },
-      child: MaterialApp(
-        title: 'TimeToDo',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurple,
-            brightness: Brightness.light,
-          ),
-          useMaterial3: true,
-          snackBarTheme: _snackBarTheme(Brightness.light),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) {
+            final theme = ThemeController();
+            theme.load();
+            return theme;
+          },
         ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurple,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-          snackBarTheme: _snackBarTheme(Brightness.dark),
+        ChangeNotifierProvider(
+          create: (_) {
+            final provider = TaskProvider(LocalTaskStore());
+            provider.load();
+            return provider;
+          },
         ),
-        home: const MainScreen(),
+      ],
+      child: Consumer<ThemeController>(
+        builder: (context, theme, _) {
+          return MaterialApp(
+            title: 'TimeToDo',
+            theme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: Colors.deepPurple,
+                brightness: Brightness.light,
+              ),
+              useMaterial3: true,
+              snackBarTheme: _snackBarTheme(Brightness.light),
+            ),
+            darkTheme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: Colors.deepPurple,
+                brightness: Brightness.dark,
+              ),
+              useMaterial3: true,
+              snackBarTheme: _snackBarTheme(Brightness.dark),
+            ),
+            themeMode: theme.mode,
+            home: const MainScreen(),
+          );
+        },
       ),
     );
   }
