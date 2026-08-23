@@ -28,7 +28,9 @@ class _FlipHostState extends State<FlipHost>
   late final AnimationController _controller;
   late final CurvedAnimation _curve;
   Offset _delta = Offset.zero;
-  double? _prevPageY;
+  double? _prevVisual;
+  double? _pendingOrigin;
+  bool _scheduled = false;
 
   @override
   void initState() {
@@ -41,15 +43,18 @@ class _FlipHostState extends State<FlipHost>
     _controller.addListener(() {
       if (mounted) setState(() {});
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _remember());
+    _scheduleAfterLayout();
   }
 
   @override
   void didUpdateWidget(FlipHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.token != widget.token) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _flip());
+      _pendingOrigin = _prevVisual;
+      _delta = Offset.zero;
+      _controller.value = 1;
     }
+    _scheduleAfterLayout();
   }
 
   @override
@@ -62,7 +67,16 @@ class _FlipHostState extends State<FlipHost>
   Offset get _translation =>
       Offset.lerp(_delta, Offset.zero, _curve.value) ?? Offset.zero;
 
-  double? _pageY() {
+  void _scheduleAfterLayout() {
+    if (_scheduled) return;
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      _afterLayout();
+    });
+  }
+
+  double? _visualPageY() {
     final ctx = _paintKey.currentContext;
     if (ctx == null) return null;
     final box = ctx.findRenderObject();
@@ -70,28 +84,30 @@ class _FlipHostState extends State<FlipHost>
     final global = box.localToGlobal(Offset.zero);
     final scrollable = Scrollable.maybeOf(ctx);
     final pixels = scrollable?.position.pixels ?? 0;
-    return global.dy + pixels - _translation.dy;
+    return global.dy + pixels;
   }
 
-  void _remember() {
-    _prevPageY = _pageY();
-  }
-
-  void _flip() {
+  void _afterLayout() {
     if (!mounted) return;
-    final next = _pageY();
-    final prev = _prevPageY;
-    _prevPageY = next;
-    if (next == null || prev == null) return;
-    final dy = prev - next;
-    if (dy.abs() < 1) return;
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _delta = Offset.zero;
-      _controller.value = 1;
-      return;
+    final visual = _visualPageY();
+    if (visual == null) return;
+
+    final origin = _pendingOrigin;
+    if (origin != null) {
+      _pendingOrigin = null;
+      final dy = origin - visual;
+      if (dy.abs() >= 1 && !MediaQuery.disableAnimationsOf(context)) {
+        setState(() {
+          _delta = Offset(0, dy);
+        });
+        _controller.forward(from: 0);
+        _prevVisual = origin;
+        _scheduleAfterLayout();
+        return;
+      }
     }
-    _delta = Offset(0, dy);
-    _controller.forward(from: 0);
+
+    _prevVisual = visual;
   }
 
   @override
