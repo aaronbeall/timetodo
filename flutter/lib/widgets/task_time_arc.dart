@@ -1,11 +1,11 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:timetodo/models/task.dart';
+import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/time_utils.dart';
 
 /// Color dot with a 24-hour arc (midnight at 9 o'clock, clockwise).
 class TaskTimeArc extends StatelessWidget {
-  final Task task;
+  final ScheduledTask task;
   final double size;
 
   const TaskTimeArc({

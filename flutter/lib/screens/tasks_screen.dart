@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/widgets/task_editor.dart';
 import 'package:timetodo/widgets/task_time_arc.dart';
+import 'package:timetodo/widgets/add_task_dialog.dart';
 import 'package:timetodo/widgets/change_toast.dart';
 import 'package:timetodo/time_utils.dart';
+
+enum _TasksFilter { day, all, archived }
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({
@@ -31,6 +35,7 @@ class _TasksScreenState extends State<TasksScreen> {
   DateTime _selectedDate = DateTime.now();
   String? _expandedTaskId;
   Task? _headingDraft;
+  _TasksFilter _filter = _TasksFilter.day;
   final _editorKey = GlobalKey<TaskEditorState>();
   final _listController = ScrollController();
   final _rowKeys = <String, GlobalKey>{};
@@ -116,7 +121,38 @@ class _TasksScreenState extends State<TasksScreen> {
       ),
       body: Column(
         children: [
-          // Date Navigation
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: SegmentedButton<_TasksFilter>(
+              segments: const [
+                ButtonSegment(
+                  value: _TasksFilter.day,
+                  label: Text('Day'),
+                  icon: Icon(Icons.today_outlined),
+                ),
+                ButtonSegment(
+                  value: _TasksFilter.all,
+                  label: Text('All'),
+                  icon: Icon(Icons.inbox_outlined),
+                ),
+                ButtonSegment(
+                  value: _TasksFilter.archived,
+                  label: Text('Archived'),
+                  icon: Icon(Icons.inventory_2_outlined),
+                ),
+              ],
+              selected: {_filter},
+              onSelectionChanged: (value) {
+                _editorKey.currentState?.commit();
+                setState(() {
+                  _filter = value.first;
+                  _expandedTaskId = null;
+                  _headingDraft = null;
+                });
+              },
+            ),
+          ),
+          if (_filter == _TasksFilter.day)
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -147,8 +183,16 @@ class _TasksScreenState extends State<TasksScreen> {
           Expanded(
             child: Consumer<TaskProvider>(
               builder: (context, taskProvider, child) {
-                final tasks = taskProvider.getTasksForDate(_selectedDate);
-                tasks.sort((a, b) {
+                final List<Task> tasks;
+                if (_filter == _TasksFilter.archived) {
+                  tasks = [...taskProvider.archivedTasks]
+                    ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+                } else if (_filter == _TasksFilter.all) {
+                  tasks = [...taskProvider.activeTasks]
+                    ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+                } else {
+                  final scheduled = taskProvider.getTasksForDate(_selectedDate);
+                  scheduled.sort((a, b) {
                   if (a.isAllDay && !b.isAllDay) return 1;
                   if (!a.isAllDay && b.isAllDay) return -1;
                   if (a.startTime == null) return 1;
@@ -156,7 +200,9 @@ class _TasksScreenState extends State<TasksScreen> {
                   final aMinutes = a.startTime!.hour * 60 + a.startTime!.minute;
                   final bMinutes = b.startTime!.hour * 60 + b.startTime!.minute;
                   return aMinutes.compareTo(bMinutes);
-                });
+                  });
+                  tasks = scheduled.map((s) => s.task).toList();
+                }
 
                 if (tasks.isEmpty) {
                   return Center(
@@ -173,7 +219,11 @@ class _TasksScreenState extends State<TasksScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'No tasks for this day',
+                          _filter == _TasksFilter.archived
+                              ? 'No archived tasks'
+                              : _filter == _TasksFilter.all
+                              ? 'No tasks yet'
+                              : 'No tasks for this day',
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                 color: Theme.of(context)
                                     .colorScheme
@@ -207,7 +257,14 @@ class _TasksScreenState extends State<TasksScreen> {
                         children: [
                           // Collapsed view
                           ListTile(
-                            leading: TaskTimeArc(task: shown),
+                            leading: TaskTimeArc(
+                              task: ScheduledTask(
+                                task: shown,
+                                date: _filter == _TasksFilter.day
+                                    ? _selectedDate
+                                    : shown.startDate,
+                              ),
+                            ),
                             title: _TaskRowTitle(task: shown),
                             subtitle: _TaskRowMeta(
                               timeLabel: _timeSummary(shown),
@@ -227,7 +284,55 @@ class _TasksScreenState extends State<TasksScreen> {
                           ),
 
                           // Expanded view
-                          if (isExpanded)
+                          if (isExpanded && task.isArchived)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                              child: Row(
+                                children: [
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      final undo = taskProvider
+                                          .permanentlyDeleteTask(task.id);
+                                      showChangeToast(
+                                        context,
+                                        message: 'Deleted ${task.label}',
+                                        onUndo: undo,
+                                      );
+                                      setState(() {
+                                        _expandedTaskId = null;
+                                        _headingDraft = null;
+                                      });
+                                    },
+                                    icon: const Icon(Icons.delete_outline),
+                                    label: const Text('Delete'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Theme.of(context)
+                                          .colorScheme
+                                          .error,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  FilledButton.tonalIcon(
+                                    onPressed: () {
+                                      final undo =
+                                          taskProvider.unarchiveTask(task.id);
+                                      showChangeToast(
+                                        context,
+                                        message: 'Restored ${task.label}',
+                                        onUndo: undo,
+                                      );
+                                      setState(() {
+                                        _expandedTaskId = null;
+                                        _headingDraft = null;
+                                      });
+                                    },
+                                    icon: const Icon(Icons.unarchive_outlined),
+                                    label: const Text('Restore'),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (isExpanded)
                             TaskEditor(
                               key: _editorKey,
                               task: task,
@@ -244,12 +349,12 @@ class _TasksScreenState extends State<TasksScreen> {
                               onDraftChanged: (preview) {
                                 setState(() => _headingDraft = preview);
                               },
-                              onDelete: () {
+                              onArchive: () {
                                 final undo =
-                                    taskProvider.deleteTask(task.id);
+                                    taskProvider.archiveTask(task.id);
                                 showChangeToast(
                                   context,
-                                  message: 'Deleted ${task.label}',
+                                  message: 'Archived ${task.label}',
                                   onUndo: undo,
                                 );
                                 setState(() {
@@ -291,11 +396,9 @@ class _TasksScreenState extends State<TasksScreen> {
       case RepeatType.daily:
         return 'Every day';
       case RepeatType.weekly:
-        return 'Weekly';
+        return Task.weeklyRepeatLabel(task.repeatWeekdays, task.startDate);
       case RepeatType.monthly:
         return 'Monthly';
-      case RepeatType.weekdays:
-        return 'Weekdays';
       case RepeatType.custom:
         final n = task.repeatInterval ?? 1;
         return n == 1 ? 'Every day' : 'Every $n days';
@@ -304,31 +407,18 @@ class _TasksScreenState extends State<TasksScreen> {
     }
   }
 
-  void _addNewTask(BuildContext context) {
-    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-    final currentTime = TimeOfDay.now();
-
-    final newTask = Task(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      label: 'New Task',
-      startTime: currentTime,
-      endTime: TimeOfDay(
-        hour: (currentTime.hour + 1) % 24,
-        minute: currentTime.minute,
+  Future<void> _addNewTask(BuildContext context) async {
+    final created = await showDialog<Task>(
+      context: context,
+      builder: (context) => AddTaskDialog(
+        initialDate: dateOnly(
+          _filter == _TasksFilter.day ? _selectedDate : DateTime.now(),
+        ),
+        initialStartTime: TimeOfDay.now(),
       ),
-      color: Colors.blue,
-      date: _selectedDate,
     );
-
-    final undo = taskProvider.addTask(newTask);
-    showChangeToast(
-      context,
-      message: 'Added ${newTask.label}',
-      onUndo: undo,
-    );
-    setState(() {
-      _expandedTaskId = newTask.id;
-    });
+    if (!mounted || created == null) return;
+    setState(() => _expandedTaskId = created.id);
   }
 }
 
@@ -340,25 +430,14 @@ class _TaskRowTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final completed = task.isCompleted;
     final ink = taskInkColor(task.color, theme.brightness);
     final titleStyle = theme.textTheme.titleMedium?.copyWith(
       fontWeight: FontWeight.w500,
-      decoration: completed ? TextDecoration.lineThrough : null,
-      decorationColor: ink.withOpacity(0.45),
-      color: ink.withOpacity(completed ? 0.55 : 1),
+      color: ink,
     );
 
     return Row(
       children: [
-        if (completed) ...[
-          Icon(
-            Icons.check_circle_rounded,
-            size: 18,
-            color: task.color,
-          ),
-          const SizedBox(width: 6),
-        ],
         Expanded(
           child: Text(
             task.label,

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:timetodo/models/task.dart';
+import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/widgets/flip_host.dart';
 
 class TaskListItem extends StatelessWidget {
-  final Task task;
+  final ScheduledTask task;
   final TimeOfDay currentTime;
   final VoidCallback? onSnooze;
   final VoidCallback? onExtend;
@@ -19,7 +19,7 @@ class TaskListItem extends StatelessWidget {
   /// Completed / skipped rows have no action buttons.
   static const resolvedStackExtent = 44.0;
 
-  static double stackExtentFor(Task task) =>
+  static double stackExtentFor(ScheduledTask task) =>
       task.isCompleted || task.isCanceled ? resolvedStackExtent : stackExtent;
 
   const TaskListItem({
@@ -176,6 +176,8 @@ class TaskListItem extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
           borderRadius: BorderRadius.circular(10),
           child: DecoratedBox(
         decoration: BoxDecoration(
@@ -347,20 +349,21 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton.filledTonal(
-      onPressed: onPressed,
-      tooltip: tooltip,
-      icon: Icon(icon),
-      style: IconButton.styleFrom(
-        foregroundColor: color,
-        backgroundColor: color.withOpacity(0.16),
-        disabledBackgroundColor: color.withOpacity(0.08),
-        iconSize: 22,
-        minimumSize: const Size(44, 44),
-        maximumSize: const Size(44, 44),
-        padding: EdgeInsets.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.standard,
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onPressed,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.16),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+        ),
       ),
     );
   }

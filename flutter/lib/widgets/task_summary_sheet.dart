@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/task_time_arc.dart';
 
 Future<void> showTaskSummarySheet(
   BuildContext context, {
-  required Task task,
+  required ScheduledTask task,
   required TimeOfDay now,
   required VoidCallback onEdit,
 }) {
@@ -117,7 +118,7 @@ class _SummaryLine extends StatelessWidget {
   }
 }
 
-String _timeLine(BuildContext context, Task task) {
+String _timeLine(BuildContext context, ScheduledTask task) {
   if (task.isAllDay) return 'All day';
   if (task.startTime != null && task.endTime != null) {
     return '${task.startTime!.format(context)} – ${task.endTime!.format(context)}';
@@ -128,16 +129,14 @@ String _timeLine(BuildContext context, Task task) {
   return 'No time set';
 }
 
-String _repeatLine(Task task) {
+String _repeatLine(ScheduledTask task) {
   switch (task.repeatType) {
     case RepeatType.daily:
       return 'Every day';
     case RepeatType.weekly:
-      return 'Weekly';
+      return Task.weeklyRepeatLabel(task.repeatWeekdays, task.task.startDate);
     case RepeatType.monthly:
       return 'Monthly';
-    case RepeatType.weekdays:
-      return 'Weekdays';
     case RepeatType.custom:
       final n = task.repeatInterval ?? 1;
       return n <= 1 ? 'Every day' : 'Every $n days';
@@ -146,7 +145,7 @@ String _repeatLine(Task task) {
   }
 }
 
-IconData _statusIcon(Task task, TimeOfDay now) {
+IconData _statusIcon(ScheduledTask task, TimeOfDay now) {
   if (task.isCompleted) return Icons.check_circle_outline;
   if (task.isCanceled) return Icons.cancel_outlined;
   if (task.isMissed(now)) return Icons.hourglass_bottom_rounded;
@@ -155,7 +154,7 @@ IconData _statusIcon(Task task, TimeOfDay now) {
   return Icons.upcoming_outlined;
 }
 
-String _statusLine(Task task, TimeOfDay now) {
+String _statusLine(ScheduledTask task, TimeOfDay now) {
   if (task.isCompleted) return 'Completed';
   if (task.isCanceled) return 'Skipped';
   if (task.isMissed(now)) return 'Expired';

@@ -3,10 +3,10 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:timetodo/models/task.dart';
+import 'package:timetodo/models/scheduled_task.dart';
 
 class _TaskRange {
-  final Task task;
+  final ScheduledTask task;
   final int start;
   final int end;
 
@@ -43,9 +43,9 @@ class _ArcGeom {
 
 class PolarClock extends StatefulWidget {
   final TimeOfDay currentTime;
-  final List<Task> tasks;
+  final List<ScheduledTask> tasks;
   final double size;
-  final ValueChanged<Task>? onTaskTap;
+  final ValueChanged<ScheduledTask>? onTaskTap;
 
   const PolarClock({
     super.key,
@@ -136,7 +136,7 @@ class _PolarClockState extends State<PolarClock>
             onTapId: widget.onTaskTap == null
                 ? null
                 : (id) {
-                    Task? task;
+                    ScheduledTask? task;
                     for (final t in widget.tasks) {
                       if (t.id == id) {
                         task = t;
@@ -221,7 +221,7 @@ class _PolarClockState extends State<PolarClock>
   }
 }
 
-Map<String, _ArcGeom> _snapshot(List<Task> tasks, TimeOfDay now) {
+Map<String, _ArcGeom> _snapshot(List<ScheduledTask> tasks, TimeOfDay now) {
   final timed = tasks
       .where((t) =>
           !t.isAllDay &&
@@ -252,7 +252,7 @@ Map<String, _ArcGeom> _snapshot(List<Task> tasks, TimeOfDay now) {
   return map;
 }
 
-Map<int, List<Task>> _assignTasksToTracks(List<Task> tasks) {
+Map<int, List<ScheduledTask>> _assignTasksToTracks(List<ScheduledTask> tasks) {
   final taskRanges = tasks.map((task) {
     final start = task.startTime!.hour * 60 + task.startTime!.minute;
     final end = task.endTime!.hour * 60 + task.endTime!.minute;
@@ -266,7 +266,7 @@ Map<int, List<Task>> _assignTasksToTracks(List<Task> tasks) {
       return a.start.compareTo(b.start);
     });
 
-  final Map<int, List<Task>> tracks = {};
+  final Map<int, List<ScheduledTask>> tracks = {};
   final List<List<_TaskRange>> trackRanges = [];
 
   for (final taskRange in taskRanges) {

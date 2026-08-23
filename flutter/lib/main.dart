@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:timetodo/data/local_task_store.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/screens/today_screen.dart';
 import 'package:timetodo/screens/tasks_screen.dart';
+import 'package:timetodo/screens/calendar_screen.dart';
+import 'package:timetodo/screens/reports_screen.dart';
 import 'package:timetodo/models/task.dart';
 
 void main() {
@@ -32,7 +35,11 @@ class TimeToDoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => TaskProvider(),
+      create: (_) {
+        final provider = TaskProvider(LocalTaskStore());
+        provider.load();
+        return provider;
+      },
       child: MaterialApp(
         title: 'TimeToDo',
         theme: ThemeData(
@@ -91,6 +98,8 @@ class _MainScreenState extends State<MainScreen> {
             revealTaskId: _revealTaskId,
             revealTick: _revealTick,
           ),
+          const CalendarScreen(),
+          const ReportsScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -113,6 +122,16 @@ class _MainScreenState extends State<MainScreen> {
             icon: Icon(Icons.task_outlined),
             selectedIcon: Icon(Icons.task),
             label: 'Tasks',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
+            label: 'Calendar',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights),
+            label: 'Reports',
           ),
         ],
       ),

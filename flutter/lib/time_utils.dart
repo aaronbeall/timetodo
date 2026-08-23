@@ -1,5 +1,16 @@
 import 'package:flutter/material.dart';
 
+DateTime dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+String dateKey(DateTime date) {
+  final d = dateOnly(date);
+  final m = d.month.toString().padLeft(2, '0');
+  final day = d.day.toString().padLeft(2, '0');
+  return '${d.year}-$m-$day';
+}
+
+bool isSameDay(DateTime a, DateTime b) => dateOnly(a) == dateOnly(b);
+
 int minutesOf(TimeOfDay time) => time.hour * 60 + time.minute;
 
 TimeOfDay timeFromMinutes(int minutes) {

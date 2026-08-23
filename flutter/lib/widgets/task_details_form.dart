@@ -8,6 +8,10 @@ import 'package:timetodo/widgets/task_timeframe_field.dart';
 class TaskDetailsForm extends StatelessWidget {
   final TextEditingController labelController;
   final DateTime date;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final ValueChanged<DateTime>? onStartDateChanged;
+  final ValueChanged<DateTime?>? onEndDateChanged;
   final bool isAllDay;
   final TimeOfDay? startTime;
   final TimeOfDay? endTime;
@@ -23,11 +27,17 @@ class TaskDetailsForm extends StatelessWidget {
     int? interval,
     List<int>? weekdays,
   }) onRepeatChanged;
+  final List<Task> restoreSuggestions;
+  final ValueChanged<Task>? onApplySuggestion;
 
   const TaskDetailsForm({
     super.key,
     required this.labelController,
     required this.date,
+    required this.startDate,
+    this.endDate,
+    this.onStartDateChanged,
+    this.onEndDateChanged,
     required this.isAllDay,
     required this.startTime,
     required this.endTime,
@@ -39,6 +49,8 @@ class TaskDetailsForm extends StatelessWidget {
     required this.onTimeframeChanged,
     required this.onColorChanged,
     required this.onRepeatChanged,
+    this.restoreSuggestions = const [],
+    this.onApplySuggestion,
   });
 
   @override
@@ -58,6 +70,28 @@ class TaskDetailsForm extends StatelessWidget {
           ),
           textCapitalization: TextCapitalization.sentences,
         ),
+        if (restoreSuggestions.isNotEmpty && onApplySuggestion != null) ...[
+          const SizedBox(height: 8),
+          for (final past in restoreSuggestions)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                title: Text(
+                  past.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(_activeRange(context, past)),
+                onTap: () => onApplySuggestion!(past),
+              ),
+            ),
+        ],
         const SizedBox(height: 8),
         TaskTimeframeField(
           isAllDay: isAllDay,
@@ -72,6 +106,9 @@ class TaskDetailsForm extends StatelessWidget {
         TaskColorPicker(selected: color, onSelected: onColorChanged),
         const SizedBox(height: 16),
         TaskRepeatField(
+          key: ValueKey(
+            '$repeatType-$repeatInterval-${repeatWeekdays?.join(',')}',
+          ),
           date: date,
           repeatType: repeatType,
           repeatInterval: repeatInterval,
@@ -81,4 +118,13 @@ class TaskDetailsForm extends StatelessWidget {
       ],
     );
   }
+}
+
+String _activeRange(BuildContext context, Task task) {
+  final loc = MaterialLocalizations.of(context);
+  final start = loc.formatMediumDate(task.startDate);
+  if (task.endDate == null) return start;
+  final end = loc.formatMediumDate(task.endDate!);
+  if (start == end) return start;
+  return '$start – $end';
 }

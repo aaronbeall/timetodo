@@ -1,29 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:timetodo/time_utils.dart';
 
 enum RepeatType {
   none,
   daily,
   weekly,
   monthly,
-  weekdays,
   custom,
 }
 
+/// Series definition. Per-day status lives on [TaskOccurrence].
 class Task {
   final String id;
-  String label;
-  TimeOfDay? startTime;
-  TimeOfDay? endTime;
-  bool isAllDay;
-  Color color;
-  DateTime date;
-  RepeatType repeatType;
-  int? repeatInterval; // For custom repeats (every N days/weeks)
-  List<int>? repeatWeekdays; // DateTime.weekday: 1 = Monday … 7 = Sunday
-  bool isSnoozed;
-  bool isCompleted;
-  bool isCanceled;
-  DateTime? snoozedUntil;
+  final String label;
+  final TimeOfDay? startTime;
+  final TimeOfDay? endTime;
+  final bool isAllDay;
+  final Color color;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final RepeatType repeatType;
+  final int? repeatInterval;
+  final List<int>? repeatWeekdays;
+  final bool isArchived;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   Task({
     required this.id,
@@ -32,15 +34,16 @@ class Task {
     this.endTime,
     this.isAllDay = false,
     required this.color,
-    required this.date,
+    required this.startDate,
+    this.endDate,
     this.repeatType = RepeatType.none,
     this.repeatInterval,
     this.repeatWeekdays,
-    this.isSnoozed = false,
-    this.snoozedUntil,
-    this.isCompleted = false,
-    this.isCanceled = false,
-  });
+    this.isArchived = false,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
 
   Task copyWith({
     String? id,
@@ -49,14 +52,15 @@ class Task {
     TimeOfDay? endTime,
     bool? isAllDay,
     Color? color,
-    DateTime? date,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool clearEndDate = false,
     RepeatType? repeatType,
     int? repeatInterval,
     List<int>? repeatWeekdays,
-    bool? isSnoozed,
-    bool? isCompleted,
-    bool? isCanceled,
-    DateTime? snoozedUntil,
+    bool? isArchived,
+    DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     return Task(
       id: id ?? this.id,
@@ -65,14 +69,14 @@ class Task {
       endTime: endTime ?? this.endTime,
       isAllDay: isAllDay ?? this.isAllDay,
       color: color ?? this.color,
-      date: date ?? this.date,
+      startDate: startDate ?? this.startDate,
+      endDate: clearEndDate ? null : (endDate ?? this.endDate),
       repeatType: repeatType ?? this.repeatType,
       repeatInterval: repeatInterval ?? this.repeatInterval,
       repeatWeekdays: repeatWeekdays ?? this.repeatWeekdays,
-      isSnoozed: isSnoozed ?? this.isSnoozed,
-      isCompleted: isCompleted ?? this.isCompleted,
-      isCanceled: isCanceled ?? this.isCanceled,
-      snoozedUntil: snoozedUntil ?? this.snoozedUntil,
+      isArchived: isArchived ?? this.isArchived,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? DateTime.now(),
     );
   }
 
@@ -80,21 +84,21 @@ class Task {
     return {
       'id': id,
       'label': label,
-      'startTime': startTime != null
-          ? '${startTime!.hour}:${startTime!.minute}'
-          : null,
+      'startTime': startTime == null
+          ? null
+          : '${startTime!.hour}:${startTime!.minute}',
       'endTime':
-          endTime != null ? '${endTime!.hour}:${endTime!.minute}' : null,
+          endTime == null ? null : '${endTime!.hour}:${endTime!.minute}',
       'isAllDay': isAllDay,
       'color': color.value,
-      'date': date.toIso8601String(),
+      'startDate': dateOnly(startDate).toIso8601String(),
+      'endDate': endDate == null ? null : dateOnly(endDate!).toIso8601String(),
       'repeatType': repeatType.name,
       'repeatInterval': repeatInterval,
       'repeatWeekdays': repeatWeekdays,
-      'isSnoozed': isSnoozed,
-      'isCompleted': isCompleted,
-      'isCanceled': isCanceled,
-      'snoozedUntil': snoozedUntil?.toIso8601String(),
+      'isArchived': isArchived,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
     };
   }
 
@@ -108,100 +112,60 @@ class Task {
       );
     }
 
+    final rawStart = json['startDate'] ?? json['date'];
+    final rawRepeat = json['repeatType'] as String?;
+    final weekdaysLegacy = rawRepeat == 'weekdays';
+    final repeatType = weekdaysLegacy
+        ? RepeatType.weekly
+        : RepeatType.values.firstWhere(
+            (e) => e.name == rawRepeat,
+            orElse: () => RepeatType.none,
+          );
+    List<int>? weekdays;
+    if (weekdaysLegacy) {
+      weekdays = [
+        DateTime.monday,
+        DateTime.tuesday,
+        DateTime.wednesday,
+        DateTime.thursday,
+        DateTime.friday,
+      ];
+    } else if (json['repeatWeekdays'] != null) {
+      weekdays = List<int>.from(json['repeatWeekdays'] as List);
+    }
     return Task(
-      id: json['id'],
-      label: json['label'],
-      startTime: parseTime(json['startTime']),
-      endTime: parseTime(json['endTime']),
-      isAllDay: json['isAllDay'] ?? false,
-      color: Color(json['color']),
-      date: DateTime.parse(json['date']),
-      repeatType: RepeatType.values.firstWhere(
-        (e) => e.name == json['repeatType'],
-        orElse: () => RepeatType.none,
-      ),
-      repeatInterval: json['repeatInterval'],
-      repeatWeekdays: json['repeatWeekdays'] != null
-          ? List<int>.from(json['repeatWeekdays'])
+      id: json['id'] as String,
+      label: json['label'] as String,
+      startTime: parseTime(json['startTime'] as String?),
+      endTime: parseTime(json['endTime'] as String?),
+      isAllDay: json['isAllDay'] as bool? ?? false,
+      color: Color(json['color'] as int),
+      startDate: dateOnly(DateTime.parse(rawStart as String)),
+      endDate: json['endDate'] != null
+          ? dateOnly(DateTime.parse(json['endDate'] as String))
           : null,
-      isSnoozed: json['isSnoozed'] ?? false,
-      isCompleted: json['isCompleted'] ?? false,
-      isCanceled: json['isCanceled'] ?? false,
-      snoozedUntil: json['snoozedUntil'] != null
-          ? DateTime.parse(json['snoozedUntil'])
-          : null,
+      repeatType: repeatType,
+      repeatInterval: json['repeatInterval'] as int?,
+      repeatWeekdays: weekdays,
+      isArchived: json['isArchived'] as bool? ?? false,
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'] as String)
+          : DateTime.now(),
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'] as String)
+          : DateTime.now(),
     );
   }
 
-  bool isActive(TimeOfDay currentTime) {
-    if (isAllDay || isCompleted || isCanceled || isSnoozed) return false;
-    if (startTime == null || endTime == null) return false;
+  bool occursOn(DateTime date) {
+    if (isArchived) return false;
+    final day = dateOnly(date);
+    final start = dateOnly(startDate);
+    if (day.isBefore(start)) return false;
+    if (endDate != null && day.isAfter(dateOnly(endDate!))) return false;
+    if (repeatType == RepeatType.none) return isSameDay(day, start);
 
-    final current = currentTime.hour * 60 + currentTime.minute;
-    final start = startTime!.hour * 60 + startTime!.minute;
-    final end = endTime!.hour * 60 + endTime!.minute;
-
-    if (start <= end) {
-      return current >= start && current < end;
-    } else {
-      // Task spans midnight
-      return current >= start || current < end;
-    }
-  }
-
-  bool isUpcoming(TimeOfDay currentTime) {
-    if (isAllDay || isCompleted || isCanceled || isSnoozed) return false;
-    if (startTime == null) return false;
-
-    final current = currentTime.hour * 60 + currentTime.minute;
-    final start = startTime!.hour * 60 + startTime!.minute;
-
-    return current < start;
-  }
-
-  bool isMissed(TimeOfDay currentTime) {
-    if (isAllDay || isCompleted || isCanceled || isSnoozed) return false;
-    if (startTime == null) return false;
-    return !isActive(currentTime) && !isUpcoming(currentTime);
-  }
-
-  static const snoozeGraceMinutes = 15;
-
-  int minutesSinceStart(TimeOfDay currentTime) {
-    if (startTime == null) return 0;
-    final current = currentTime.hour * 60 + currentTime.minute;
-    final start = startTime!.hour * 60 + startTime!.minute;
-    if (current >= start) return current - start;
-    return 24 * 60 - start + current;
-  }
-
-  bool isInSnoozeGrace(TimeOfDay currentTime) {
-    if (!isActive(currentTime)) return false;
-    return minutesSinceStart(currentTime) < snoozeGraceMinutes;
-  }
-
-  double elapsedFraction(TimeOfDay currentTime) {
-    if (startTime == null || endTime == null) return 0;
-    final start = startTime!.hour * 60 + startTime!.minute;
-    final end = endTime!.hour * 60 + endTime!.minute;
-    final duration = start <= end ? end - start : 24 * 60 - start + end;
-    if (duration <= 0) return 0;
-    return (minutesSinceStart(currentTime) / duration).clamp(0.0, 1.0);
-  }
-
-  bool shouldShowOnDate(DateTime date) {
-    if (this.date.year == date.year &&
-        this.date.month == date.month &&
-        this.date.day == date.day) {
-      return true;
-    }
-
-    if (repeatType == RepeatType.none) return false;
-    final daysDiff = DateTime(date.year, date.month, date.day)
-        .difference(DateTime(this.date.year, this.date.month, this.date.day))
-        .inDays;
-    if (daysDiff < 0) return false;
-
+    final daysDiff = day.difference(start).inDays;
     switch (repeatType) {
       case RepeatType.none:
         return false;
@@ -210,18 +174,60 @@ class Task {
       case RepeatType.weekly:
         final days = repeatWeekdays;
         if (days == null || days.isEmpty) {
-          return date.weekday == this.date.weekday;
+          return day.weekday == start.weekday;
         }
-        return days.contains(date.weekday);
+        return days.contains(day.weekday);
       case RepeatType.monthly:
-        return date.day == this.date.day;
-      case RepeatType.weekdays:
-        return date.weekday >= DateTime.monday &&
-            date.weekday <= DateTime.friday;
+        return day.day == start.day;
       case RepeatType.custom:
         final interval = repeatInterval ?? 1;
         if (interval < 1) return false;
         return daysDiff % interval == 0;
     }
+  }
+
+  static const mondayToFriday = {
+    DateTime.monday,
+    DateTime.tuesday,
+    DateTime.wednesday,
+    DateTime.thursday,
+    DateTime.friday,
+  };
+
+  static const saturdaySunday = {
+    DateTime.saturday,
+    DateTime.sunday,
+  };
+
+  static String weeklyRepeatLabel(List<int>? weekdays, DateTime startDate) {
+    final days = (weekdays == null || weekdays.isEmpty)
+        ? {startDate.weekday}
+        : weekdays.toSet();
+    if (days.length == mondayToFriday.length &&
+        days.containsAll(mondayToFriday)) {
+      return 'Weekdays';
+    }
+    if (days.length == saturdaySunday.length &&
+        days.containsAll(saturdaySunday)) {
+      return 'Weekends';
+    }
+    final names = (days.toList()..sort())
+        .map(_weekdayShortName)
+        .join(', ');
+    return 'Every $names';
+  }
+
+  /// 2024-01-01 is a Monday; DateTime.weekday is 1=Monday … 7=Sunday.
+  static String _weekdayShortName(int weekday) {
+    final date = DateTime(2024, 1, 1).add(Duration(days: weekday - 1));
+    return DateFormat.E().format(date);
+  }
+
+  /// Still running as of [asOf] (defaults to today): not archived and not ended.
+  bool isOpen({DateTime? asOf}) {
+    if (isArchived) return false;
+    final day = dateOnly(asOf ?? DateTime.now());
+    if (endDate != null && day.isAfter(dateOnly(endDate!))) return false;
+    return true;
   }
 }

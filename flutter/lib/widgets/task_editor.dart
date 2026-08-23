@@ -7,7 +7,7 @@ class TaskEditor extends StatefulWidget {
   final bool viewActive;
   final void Function(Task task, String message) onCommit;
   final void Function(Task preview)? onDraftChanged;
-  final VoidCallback onDelete;
+  final VoidCallback onArchive;
 
   const TaskEditor({
     super.key,
@@ -15,7 +15,7 @@ class TaskEditor extends StatefulWidget {
     required this.viewActive,
     required this.onCommit,
     this.onDraftChanged,
-    required this.onDelete,
+    required this.onArchive,
   });
 
   @override
@@ -31,6 +31,10 @@ class TaskEditorState extends State<TaskEditor> {
   late RepeatType _repeatType;
   late int? _repeatInterval;
   late List<int>? _repeatWeekdays;
+  late DateTime _startDate;
+  late DateTime? _endDate;
+  late DateTime _savedStartDate;
+  late DateTime? _savedEndDate;
   late String _savedLabel;
   late TimeOfDay? _savedStart;
   late TimeOfDay? _savedEnd;
@@ -59,6 +63,8 @@ class TaskEditorState extends State<TaskEditor> {
     _repeatInterval = task.repeatInterval;
     _repeatWeekdays =
         task.repeatWeekdays == null ? null : List<int>.from(task.repeatWeekdays!);
+    _startDate = task.startDate;
+    _endDate = task.endDate;
   }
 
   void _rememberSaved() {
@@ -71,6 +77,8 @@ class TaskEditorState extends State<TaskEditor> {
     _savedInterval = _repeatInterval;
     _savedWeekdays =
         _repeatWeekdays == null ? null : List<int>.from(_repeatWeekdays!);
+    _savedStartDate = _startDate;
+    _savedEndDate = _endDate;
   }
 
   void _onLabel() {
@@ -93,14 +101,13 @@ class TaskEditorState extends State<TaskEditor> {
       endTime: _isAllDay ? null : _endTime,
       isAllDay: _isAllDay,
       color: _selectedColor,
-      date: widget.task.date,
+      startDate: _startDate,
+      endDate: _endDate,
       repeatType: _repeatType,
       repeatInterval: _repeatType == RepeatType.custom ? _repeatInterval : null,
       repeatWeekdays: _repeatType == RepeatType.weekly ? _repeatWeekdays : null,
-      isSnoozed: widget.task.isSnoozed,
-      isCompleted: widget.task.isCompleted,
-      isCanceled: widget.task.isCanceled,
-      snoozedUntil: widget.task.snoozedUntil,
+      isArchived: widget.task.isArchived,
+      createdAt: widget.task.createdAt,
     );
   }
 
@@ -143,6 +150,8 @@ class TaskEditorState extends State<TaskEditor> {
     if (_repeatType != _savedRepeatType) return true;
     if (_repeatInterval != _savedInterval) return true;
     if (!_listEquals(_repeatWeekdays, _savedWeekdays)) return true;
+    if (_startDate != _savedStartDate) return true;
+    if (_endDate != _savedEndDate) return true;
     return false;
   }
 
@@ -168,14 +177,13 @@ class TaskEditorState extends State<TaskEditor> {
       endTime: _isAllDay ? null : _endTime,
       isAllDay: _isAllDay,
       color: _selectedColor,
-      date: widget.task.date,
+      startDate: _startDate,
+      endDate: _endDate,
       repeatType: _repeatType,
       repeatInterval: _repeatType == RepeatType.custom ? _repeatInterval : null,
       repeatWeekdays: _repeatType == RepeatType.weekly ? _repeatWeekdays : null,
-      isSnoozed: widget.task.isSnoozed,
-      isCompleted: widget.task.isCompleted,
-      isCanceled: widget.task.isCanceled,
-      snoozedUntil: widget.task.snoozedUntil,
+      isArchived: widget.task.isArchived,
+      createdAt: widget.task.createdAt,
     );
   }
 
@@ -200,6 +208,9 @@ class TaskEditorState extends State<TaskEditor> {
         next.repeatInterval != _savedInterval ||
         !_listEquals(next.repeatWeekdays, _savedWeekdays);
     if (repeatChanged) changes.add('repeat');
+    if (next.startDate != _savedStartDate || next.endDate != _savedEndDate) {
+      changes.add('dates');
+    }
 
     if (changes.length == 1) {
       switch (changes.first) {
@@ -213,6 +224,8 @@ class TaskEditorState extends State<TaskEditor> {
           return 'Updated $name color';
         case 'repeat':
           return 'Updated $name repeat';
+        case 'dates':
+          return 'Updated $name dates';
       }
     }
     return 'Updated $name';
@@ -232,6 +245,8 @@ class TaskEditorState extends State<TaskEditor> {
       _repeatInterval = _savedInterval;
       _repeatWeekdays =
           _savedWeekdays == null ? null : List<int>.from(_savedWeekdays!);
+      _startDate = _savedStartDate;
+      _endDate = _savedEndDate;
     });
   }
 
@@ -243,9 +258,11 @@ class TaskEditorState extends State<TaskEditor> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          TaskDetailsForm(
+            TaskDetailsForm(
             labelController: _labelController,
-            date: widget.task.date,
+            startDate: _startDate,
+            endDate: _endDate,
+            date: _startDate,
             isAllDay: _isAllDay,
             startTime: _startTime,
             endTime: _endTime,
@@ -273,12 +290,9 @@ class TaskEditorState extends State<TaskEditor> {
           Row(
             children: [
               TextButton.icon(
-                onPressed: widget.onDelete,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Delete'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.error,
-                ),
+                onPressed: widget.onArchive,
+                icon: const Icon(Icons.inventory_2_outlined),
+                label: const Text('Archive'),
               ),
               const Spacer(),
               FilledButton.tonalIcon(

@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:timetodo/data/demo_schedule.dart';
 import 'package:timetodo/models/task.dart';
+import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_list_item.dart';
@@ -13,6 +15,8 @@ import 'package:timetodo/widgets/add_task_dialog.dart';
 import 'package:timetodo/widgets/change_toast.dart';
 import 'package:timetodo/widgets/flip_host.dart';
 import 'package:timetodo/widgets/task_summary_sheet.dart';
+
+enum _TestDataChoice { light, typical, packed, clear }
 
 class TodayScreen extends StatefulWidget {
   final ValueChanged<Task>? onEditTask;
@@ -76,6 +80,26 @@ class _TodayScreenState extends State<TodayScreen> {
       0,
       duration: const Duration(milliseconds: 420),
       curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _onBodyPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    if (!_scrollController.hasClients) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (resolved) {
+      final delta = (resolved as PointerScrollEvent).scrollDelta.dy;
+      _scrollController.position.pointerScroll(delta);
+    });
+  }
+
+  void _onClockDragUpdate(DragUpdateDetails details) {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    pos.jumpTo(
+      (pos.pixels - details.delta.dy).clamp(
+        pos.minScrollExtent,
+        pos.maxScrollExtent,
+      ),
     );
   }
 
@@ -255,21 +279,21 @@ class _TodayScreenState extends State<TodayScreen> {
     return slack + travel * (1 - t);
   }
 
-  void _showSummary(Task task) {
+  void _showSummary(ScheduledTask task) {
     showTaskSummarySheet(
       context,
       task: task,
       now: _currentTime,
-      onEdit: () => widget.onEditTask?.call(task),
+      onEdit: () => widget.onEditTask?.call(task.task),
     );
   }
 
-  int _startMinutes(Task task) {
+  int _startMinutes(ScheduledTask task) {
     if (task.startTime == null) return 24 * 60;
     return task.startTime!.hour * 60 + task.startTime!.minute;
   }
 
-  int _recencyMinutes(Task task) {
+  int _recencyMinutes(ScheduledTask task) {
     final TimeOfDay? mark = task.endTime ?? task.startTime;
     if (mark == null) return 24 * 60;
     final now = _currentTime.hour * 60 + _currentTime.minute;
@@ -295,15 +319,31 @@ class _TodayScreenState extends State<TodayScreen> {
               _buildDateTitle(context),
               Align(
                 alignment: Alignment.centerRight,
-                child: PopupMenuButton<DemoScheduleKind>(
+                child: PopupMenuButton<_TestDataChoice>(
                   tooltip: 'Test schedule',
-                  onSelected: (kind) {
-                    final undo =
-                        context.read<TaskProvider>().loadDemoSchedule(kind);
-                    final label = switch (kind) {
-                      DemoScheduleKind.light => 'Light day',
-                      DemoScheduleKind.typical => 'Typical day',
-                      DemoScheduleKind.packed => 'Packed day',
+                  onSelected: (choice) {
+                    final provider = context.read<TaskProvider>();
+                    if (choice == _TestDataChoice.clear) {
+                      final undo = provider.clearAllData();
+                      showChangeToast(
+                        context,
+                        message: 'Cleared all data',
+                        onUndo: undo,
+                      );
+                      return;
+                    }
+                    final kind = switch (choice) {
+                      _TestDataChoice.light => DemoScheduleKind.light,
+                      _TestDataChoice.typical => DemoScheduleKind.typical,
+                      _TestDataChoice.packed => DemoScheduleKind.packed,
+                      _TestDataChoice.clear => DemoScheduleKind.light,
+                    };
+                    final undo = provider.loadDemoSchedule(kind);
+                    final label = switch (choice) {
+                      _TestDataChoice.light => 'Light day',
+                      _TestDataChoice.typical => 'Typical day',
+                      _TestDataChoice.packed => 'Packed day',
+                      _TestDataChoice.clear => '',
                     };
                     showChangeToast(
                       context,
@@ -313,16 +353,21 @@ class _TodayScreenState extends State<TodayScreen> {
                   },
                   itemBuilder: (context) => const [
                     PopupMenuItem(
-                      value: DemoScheduleKind.light,
+                      value: _TestDataChoice.light,
                       child: Text('Light day'),
                     ),
                     PopupMenuItem(
-                      value: DemoScheduleKind.typical,
+                      value: _TestDataChoice.typical,
                       child: Text('Typical day'),
                     ),
                     PopupMenuItem(
-                      value: DemoScheduleKind.packed,
+                      value: _TestDataChoice.packed,
                       child: Text('Packed day'),
+                    ),
+                    PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: _TestDataChoice.clear,
+                      child: Text('Clear all data'),
                     ),
                   ],
                   child: const Padding(
@@ -363,7 +408,7 @@ class _TodayScreenState extends State<TodayScreen> {
           _flipKeys.removeWhere((id, _) => !liveIds.contains(id));
 
           Widget item(
-            Task task, {
+            ScheduledTask task, {
             bool shadow = false,
             required String token,
           }) {
@@ -376,7 +421,8 @@ class _TodayScreenState extends State<TodayScreen> {
                 showShadow: shadow,
                 onTap: () => _showSummary(task),
                 onSnooze: () {
-                  final undo = taskProvider.snoozeTask(task.id);
+                  final undo =
+                      taskProvider.snoozeTask(task.id, _currentDate);
                   showChangeToast(
                     context,
                     message: 'Snoozed ${task.label} 15 min',
@@ -384,7 +430,8 @@ class _TodayScreenState extends State<TodayScreen> {
                   );
                 },
                 onExtend: () {
-                  final undo = taskProvider.extendTask(task.id);
+                  final undo =
+                      taskProvider.extendTask(task.id, _currentDate);
                   showChangeToast(
                     context,
                     message: 'Extended ${task.label} 15 min',
@@ -392,7 +439,8 @@ class _TodayScreenState extends State<TodayScreen> {
                   );
                 },
                 onComplete: () {
-                  final undo = taskProvider.completeTask(task.id);
+                  final undo =
+                      taskProvider.completeTask(task.id, _currentDate);
                   showChangeToast(
                     context,
                     message: 'Completed ${task.label}',
@@ -400,7 +448,8 @@ class _TodayScreenState extends State<TodayScreen> {
                   );
                 },
                 onCancel: () {
-                  final undo = taskProvider.cancelTask(task.id);
+                  final undo =
+                      taskProvider.cancelTask(task.id, _currentDate);
                   showChangeToast(
                     context,
                     message: 'Skipped ${task.label}',
@@ -408,8 +457,11 @@ class _TodayScreenState extends State<TodayScreen> {
                   );
                 },
                 onDoNow: () {
-                  final undo =
-                      taskProvider.doNowTask(task.id, _currentTime);
+                  final undo = taskProvider.doNowTask(
+                    task.id,
+                    _currentDate,
+                    _currentTime,
+                  );
                   showChangeToast(
                     context,
                     message: 'Started ${task.label} now',
@@ -467,7 +519,9 @@ class _TodayScreenState extends State<TodayScreen> {
                 _updateFanFromScroll();
               });
 
-              return Stack(
+              return Listener(
+                    onPointerSignal: _onBodyPointerSignal,
+                    child: Stack(
                     children: [
                       CustomScrollView(
                         controller: _scrollController,
@@ -622,16 +676,17 @@ class _TodayScreenState extends State<TodayScreen> {
                           return Positioned(
                             left: left,
                             top: top,
-                            child: docked
-                                ? GestureDetector(
-                                    onTap: _scrollToTop,
-                                    child: clockFace,
-                                  )
-                                : clockFace,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onVerticalDragUpdate: _onClockDragUpdate,
+                              onTap: docked ? _scrollToTop : null,
+                              child: clockFace,
+                            ),
                           );
                         },
                       ),
                     ],
+                    ),
                   );
             },
           );
@@ -866,6 +921,7 @@ class _UpcomingDeckState extends State<_UpcomingDeck> {
               right: 0,
               child: Transform(
                 alignment: Alignment.topCenter,
+                transformHitTests: false,
                 transform: _paperTransform(_zFor(i, t), t),
                 child: DecoratedBox(
                   decoration: BoxDecoration(

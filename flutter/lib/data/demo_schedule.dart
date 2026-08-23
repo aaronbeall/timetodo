@@ -44,6 +44,7 @@ class _DemoBuilder {
     required TimeOfDay end,
     Color? color,
     RepeatType repeat = RepeatType.none,
+    List<int>? weekdays,
   }) {
     final i = _n++;
     return Task(
@@ -52,8 +53,9 @@ class _DemoBuilder {
       startTime: start,
       endTime: end,
       color: color ?? _palette[i % _palette.length],
-      date: date,
+      startDate: date,
       repeatType: repeat,
+      repeatWeekdays: weekdays,
     );
   }
 
@@ -64,7 +66,7 @@ class _DemoBuilder {
       label: label,
       isAllDay: true,
       color: color,
-      date: date,
+      startDate: date,
       repeatType: RepeatType.daily,
     );
   }
@@ -96,7 +98,14 @@ List<Task> _light(DateTime day) {
       start: _t(9, 0),
       end: _t(17, 0),
       color: const Color(0xFF42A5F5),
-      repeat: RepeatType.weekdays,
+      repeat: RepeatType.weekly,
+      weekdays: const [
+        DateTime.monday,
+        DateTime.tuesday,
+        DateTime.wednesday,
+        DateTime.thursday,
+        DateTime.friday,
+      ],
     ),
     d.timed(
       label: 'Dinner',
@@ -130,14 +139,28 @@ List<Task> _typical(DateTime day) {
       start: _t(9, 30),
       end: _t(15, 0),
       color: const Color(0xFF42A5F5),
-      repeat: RepeatType.weekdays,
+      repeat: RepeatType.weekly,
+      weekdays: const [
+        DateTime.monday,
+        DateTime.tuesday,
+        DateTime.wednesday,
+        DateTime.thursday,
+        DateTime.friday,
+      ],
     ),
     d.timed(
       label: 'Collaboration block',
       start: _t(11, 0),
       end: _t(13, 30),
       color: const Color(0xFF26A69A),
-      repeat: RepeatType.weekdays,
+      repeat: RepeatType.weekly,
+      weekdays: const [
+        DateTime.monday,
+        DateTime.tuesday,
+        DateTime.wednesday,
+        DateTime.thursday,
+        DateTime.friday,
+      ],
     ),
     d.timed(
       label: 'Project time',

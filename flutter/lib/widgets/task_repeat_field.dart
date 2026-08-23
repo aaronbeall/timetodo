@@ -44,13 +44,11 @@ class TaskRepeatField extends StatelessWidget {
               value: RepeatType.daily,
               child: Text('Every day'),
             ),
-            const DropdownMenuItem(
+            DropdownMenuItem(
               value: RepeatType.weekly,
-              child: Text('Weekly'),
-            ),
-            const DropdownMenuItem(
-              value: RepeatType.weekdays,
-              child: Text('Every weekday (Mon–Fri)'),
+              child: Text(
+                Task.weeklyRepeatLabel(repeatWeekdays, date),
+              ),
             ),
             DropdownMenuItem(
               value: RepeatType.monthly,
@@ -116,7 +114,6 @@ class TaskRepeatField extends StatelessWidget {
       case RepeatType.none:
       case RepeatType.daily:
       case RepeatType.monthly:
-      case RepeatType.weekdays:
         onChanged(type: type, interval: null, weekdays: null);
       case RepeatType.weekly:
         onChanged(
