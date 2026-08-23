@@ -1,91 +1,459 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
+import 'package:timetodo/models/task_occurrence.dart';
+import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/time_utils.dart';
+import 'package:timetodo/widgets/change_toast.dart';
 import 'package:timetodo/widgets/task_time_arc.dart';
+import 'package:timetodo/widgets/task_timeframe_field.dart';
 
 Future<void> showTaskSummarySheet(
   BuildContext context, {
   required ScheduledTask task,
   required TimeOfDay now,
   required VoidCallback onEdit,
-}) {
-  return showModalBottomSheet<void>(
+}) async {
+  final draft = _InstanceDraft.from(task, now);
+  var openParent = false;
+  await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
+    isScrollControlled: true,
     builder: (sheetContext) {
-      final theme = Theme.of(sheetContext);
-      final ink = taskInkColor(task.color, theme.brightness);
-      final muted = theme.colorScheme.onSurfaceVariant;
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+      return _TaskSummarySheet(
+        task: task,
+        now: now,
+        draft: draft,
+        onEditParent: () {
+          openParent = true;
+          Navigator.of(sheetContext).pop();
+        },
+      );
+    },
+  );
+  if (!context.mounted) return;
+  final undo = _commitDraft(context, task, draft);
+  if (openParent) onEdit();
+  if (undo != null) {
+    showChangeToast(
+      context,
+      message: _commitMessage(task.label, draft),
+      onUndo: undo,
+    );
+  }
+}
+
+class _InstanceDraft {
+  TimeOfDay? startTime;
+  TimeOfDay? endTime;
+  _StatusChoice status;
+  bool applyFollowing = false;
+
+  final TimeOfDay? initialStart;
+  final TimeOfDay? initialEnd;
+  final _StatusChoice initialStatus;
+
+  _InstanceDraft({
+    required this.startTime,
+    required this.endTime,
+    required this.status,
+    required this.initialStart,
+    required this.initialEnd,
+    required this.initialStatus,
+  });
+
+  factory _InstanceDraft.from(ScheduledTask task, TimeOfDay now) {
+    final status = _statusOf(task, now);
+    return _InstanceDraft(
+      startTime: task.startTime,
+      endTime: task.endTime,
+      status: status,
+      initialStart: task.startTime,
+      initialEnd: task.endTime,
+      initialStatus: status,
+    );
+  }
+
+  bool get timesChanged =>
+      startTime != initialStart || endTime != initialEnd;
+
+  bool get statusChanged => status != initialStatus;
+
+  bool get writesStatus {
+    if (!statusChanged) return false;
+    return status == _StatusChoice.complete ||
+        status == _StatusChoice.skipped ||
+        status == _StatusChoice.upcoming;
+  }
+
+  bool get isDirty => timesChanged || writesStatus || applyFollowing;
+}
+
+VoidCallback? _commitDraft(
+  BuildContext context,
+  ScheduledTask task,
+  _InstanceDraft draft,
+) {
+  if (!draft.isDirty) return null;
+  final provider = context.read<TaskProvider>();
+  final today = dateOnly(DateTime.now());
+  final day = dateOnly(task.date);
+  final canEditTimes = !day.isBefore(today);
+  return provider.commitOccurrenceEdits(
+    taskId: task.id,
+    day: day,
+    writeTimes: canEditTimes && !task.isAllDay && draft.timesChanged,
+    isAllDay: task.isAllDay,
+    startTime: draft.startTime,
+    endTime: draft.endTime,
+    writeStatus: draft.writesStatus,
+    isCompleted: draft.status == _StatusChoice.complete,
+    isCanceled: draft.status == _StatusChoice.skipped,
+    applyFollowing: canEditTimes && draft.applyFollowing,
+  );
+}
+
+String _commitMessage(String label, _InstanceDraft draft) {
+  if (draft.applyFollowing && !draft.writesStatus) {
+    return 'Applied time to all scheduled $label';
+  }
+  if (draft.writesStatus && !draft.timesChanged && !draft.applyFollowing) {
+    return switch (draft.status) {
+      _StatusChoice.complete => 'Completed $label',
+      _StatusChoice.skipped => 'Skipped $label',
+      _StatusChoice.upcoming => '$label set to upcoming',
+      _ => 'Updated $label',
+    };
+  }
+  if (draft.timesChanged && !draft.writesStatus && !draft.applyFollowing) {
+    return 'Updated $label time';
+  }
+  return 'Updated $label';
+}
+
+enum _StatusChoice {
+  upcoming,
+  inProgress,
+  openAllDay,
+  expired,
+  skipped,
+  complete,
+}
+
+class _TaskSummarySheet extends StatefulWidget {
+  final ScheduledTask task;
+  final TimeOfDay now;
+  final _InstanceDraft draft;
+  final VoidCallback onEditParent;
+
+  const _TaskSummarySheet({
+    required this.task,
+    required this.now,
+    required this.draft,
+    required this.onEditParent,
+  });
+
+  @override
+  State<_TaskSummarySheet> createState() => _TaskSummarySheetState();
+}
+
+class _TaskSummarySheetState extends State<_TaskSummarySheet> {
+  ScheduledTask get task => widget.task;
+  _InstanceDraft get draft => widget.draft;
+
+  ScheduledTask get _preview {
+    final day = dateOnly(task.date);
+    return ScheduledTask(
+      task: task.task,
+      date: day,
+      occurrence: TaskOccurrence(
+        id: TaskOccurrence.idFor(task.id, day),
+        taskId: task.id,
+        date: day,
+        startTime: draft.startTime,
+        endTime: draft.endTime,
+        isAllDay: task.isAllDay,
+        isCompleted: draft.status == _StatusChoice.complete,
+        isCanceled: draft.status == _StatusChoice.skipped,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = _preview;
+    final theme = Theme.of(context);
+    final ink = taskInkColor(preview.color, theme.brightness);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final today = dateOnly(DateTime.now());
+    final day = dateOnly(task.date);
+    final canEditTimes = !day.isBefore(today);
+    final futureStatus = _usesFutureStatus(task, widget.now, today);
+    final status = draft.status;
+    final items = _statusItems(futureStatus: futureStatus);
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          0,
+          24,
+          20 + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TaskTimeArc(task: task),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: TaskTimeArc(task: preview),
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
-                    child: Text(
-                      task.label,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: ink,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          preview.label,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: ink,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _instanceDateLabel(day),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (preview.isAllDay)
+                _SummaryLine(
+                  icon: Icons.wb_sunny_outlined,
+                  text: 'All day',
+                  color: muted,
+                )
+              else if (canEditTimes)
+                TaskTimeframeField(
+                  isAllDay: false,
+                  startTime: draft.startTime,
+                  endTime: draft.endTime,
+                  showAllDayToggle: false,
+                  showTrailingTimeIcon: false,
+                  leadingIcons: true,
+                  onTimeframeChanged: (range) {
+                    setState(() {
+                      draft.startTime = range.$1;
+                      draft.endTime = range.$2;
+                      if (!draft.timesChanged) {
+                        draft.applyFollowing = false;
+                      }
+                    });
+                  },
+                )
+              else ...[
+                _SummaryLine(
+                  icon: Icons.schedule_rounded,
+                  text: _timeLine(context, preview),
+                  color: muted,
+                ),
+                if (preview.startTime != null &&
+                    preview.endTime != null) ...[
+                  const SizedBox(height: 10),
+                  _SummaryLine(
+                    icon: Icons.timelapse_rounded,
+                    text: formatDurationMinutes(
+                      durationMinutes(preview.startTime!, preview.endTime!),
+                    ),
+                    color: muted,
+                  ),
+                ],
+              ],
+              if (preview.repeatType != RepeatType.none) ...[
+                const SizedBox(height: 10),
+                _SummaryLine(
+                  icon: Icons.repeat_rounded,
+                  text: _repeatLine(preview),
+                  color: muted,
+                ),
+              ],
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<_StatusChoice>(
+                        isExpanded: true,
+                        value: items.any((item) => item.value == status)
+                            ? status
+                            : null,
+                        hint: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: _statusOption(
+                            context,
+                            status,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        selectedItemBuilder: (context) => [
+                          for (final item in items)
+                            Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: _statusOption(
+                                context,
+                                item.value,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                        ],
+                        borderRadius: BorderRadius.circular(12),
+                        items: [
+                          for (final item in items)
+                            DropdownMenuItem(
+                              value: item.value,
+                              child: _statusOption(context, item.value),
+                            ),
+                        ],
+                        onChanged: (next) {
+                          if (next == null) return;
+                          setState(() => draft.status = next);
+                        },
                       ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 18),
-              _SummaryLine(
-                icon: Icons.schedule_rounded,
-                text: _timeLine(sheetContext, task),
-                color: muted,
-              ),
-              if (!task.isAllDay &&
-                  task.startTime != null &&
-                  task.endTime != null) ...[
-                const SizedBox(height: 10),
-                _SummaryLine(
-                  icon: Icons.timelapse_rounded,
-                  text: formatDurationMinutes(
-                    durationMinutes(task.startTime!, task.endTime!),
+              if (canEditTimes)
+                FilledButton.tonalIcon(
+                  onPressed: draft.timesChanged
+                      ? () {
+                          setState(
+                            () => draft.applyFollowing = !draft.applyFollowing,
+                          );
+                        }
+                      : null,
+                  icon: const Icon(Icons.event_repeat_outlined),
+                  label: Text(
+                    draft.applyFollowing
+                        ? 'Will apply to all scheduled'
+                        : 'Apply to all scheduled',
                   ),
-                  color: muted,
+                  style: draft.applyFollowing
+                      ? FilledButton.styleFrom(
+                          backgroundColor:
+                              theme.colorScheme.primaryContainer,
+                          foregroundColor:
+                              theme.colorScheme.onPrimaryContainer,
+                        )
+                      : null,
                 ),
-              ],
-              if (task.repeatType != RepeatType.none) ...[
-                const SizedBox(height: 10),
-                _SummaryLine(
-                  icon: Icons.repeat_rounded,
-                  text: _repeatLine(task),
-                  color: muted,
-                ),
-              ],
-              const SizedBox(height: 10),
-              _SummaryLine(
-                icon: _statusIcon(task, now),
-                text: _statusLine(task, now),
-                color: muted,
-              ),
-              const SizedBox(height: 22),
-              FilledButton.tonalIcon(
-                onPressed: () {
-                  Navigator.of(sheetContext).pop();
-                  onEdit();
-                },
+              if (canEditTimes) const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: widget.onEditParent,
                 icon: const Icon(Icons.edit_outlined),
-                label: const Text('Edit'),
+                label: const Text('Edit task'),
               ),
             ],
           ),
         ),
-      );
-    },
+      ),
+    );
+  }
+}
+
+class _StatusItem {
+  final _StatusChoice value;
+  final String label;
+
+  const _StatusItem(this.value, this.label);
+}
+
+List<_StatusItem> _statusItems({required bool futureStatus}) {
+  if (futureStatus) {
+    return const [
+      _StatusItem(_StatusChoice.upcoming, 'Upcoming'),
+      _StatusItem(_StatusChoice.skipped, 'Skipped'),
+    ];
+  }
+  return const [
+    _StatusItem(_StatusChoice.skipped, 'Skipped'),
+    _StatusItem(_StatusChoice.complete, 'Complete'),
+  ];
+}
+
+String _statusLabel(_StatusChoice status) {
+  return switch (status) {
+    _StatusChoice.complete => 'Complete',
+    _StatusChoice.skipped => 'Skipped',
+    _StatusChoice.expired => 'Expired',
+    _StatusChoice.inProgress => 'In progress',
+    _StatusChoice.openAllDay => 'Open all day',
+    _StatusChoice.upcoming => 'Upcoming',
+  };
+}
+
+Widget _statusOption(
+  BuildContext context,
+  _StatusChoice status, {
+  Color? color,
+}) {
+  final theme = Theme.of(context);
+  final resolved = color ?? theme.colorScheme.onSurface;
+  return Row(
+    children: [
+      Icon(_statusIcon(status), size: 18, color: resolved),
+      const SizedBox(width: 10),
+      Text(
+        _statusLabel(status),
+        style: theme.textTheme.bodyLarge?.copyWith(color: resolved),
+      ),
+    ],
   );
+}
+
+bool _usesFutureStatus(
+  ScheduledTask task,
+  TimeOfDay now,
+  DateTime today,
+) {
+  final day = dateOnly(task.date);
+  if (day.isAfter(today)) return true;
+  if (day.isBefore(today)) return false;
+  return _statusOf(task, now) == _StatusChoice.upcoming;
+}
+
+_StatusChoice _statusOf(ScheduledTask task, TimeOfDay now) {
+  if (task.isCompleted) return _StatusChoice.complete;
+  if (task.isCanceled) return _StatusChoice.skipped;
+  if (task.isMissed(now)) return _StatusChoice.expired;
+  if (task.isActive(now)) return _StatusChoice.inProgress;
+  if (task.isAllDay) return _StatusChoice.openAllDay;
+  return _StatusChoice.upcoming;
+}
+
+IconData _statusIcon(_StatusChoice status) {
+  return switch (status) {
+    _StatusChoice.complete => Icons.check_circle_outline,
+    _StatusChoice.skipped => Icons.cancel_outlined,
+    _StatusChoice.expired => Icons.hourglass_bottom_rounded,
+    _StatusChoice.inProgress => Icons.play_circle_outline,
+    _StatusChoice.openAllDay => Icons.wb_sunny_outlined,
+    _StatusChoice.upcoming => Icons.upcoming_outlined,
+  };
 }
 
 class _SummaryLine extends StatelessWidget {
@@ -118,6 +486,13 @@ class _SummaryLine extends StatelessWidget {
   }
 }
 
+String _instanceDateLabel(DateTime day) {
+  final now = DateTime.now();
+  final months = (now.year - day.year) * 12 + now.month - day.month;
+  final format = months.abs() < 12 ? DateFormat.MMMEd() : DateFormat.yMMMEd();
+  return format.format(day);
+}
+
 String _timeLine(BuildContext context, ScheduledTask task) {
   if (task.isAllDay) return 'All day';
   if (task.startTime != null && task.endTime != null) {
@@ -143,22 +518,4 @@ String _repeatLine(ScheduledTask task) {
     case RepeatType.none:
       return 'Does not repeat';
   }
-}
-
-IconData _statusIcon(ScheduledTask task, TimeOfDay now) {
-  if (task.isCompleted) return Icons.check_circle_outline;
-  if (task.isCanceled) return Icons.cancel_outlined;
-  if (task.isMissed(now)) return Icons.hourglass_bottom_rounded;
-  if (task.isActive(now)) return Icons.play_circle_outline;
-  if (task.isAllDay) return Icons.wb_sunny_outlined;
-  return Icons.upcoming_outlined;
-}
-
-String _statusLine(ScheduledTask task, TimeOfDay now) {
-  if (task.isCompleted) return 'Completed';
-  if (task.isCanceled) return 'Skipped';
-  if (task.isMissed(now)) return 'Expired';
-  if (task.isActive(now)) return 'In progress';
-  if (task.isAllDay) return 'Open all day';
-  return 'Upcoming';
 }

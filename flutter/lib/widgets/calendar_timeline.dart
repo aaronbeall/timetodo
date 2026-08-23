@@ -93,11 +93,13 @@ String formatHourLabel(int hour) {
 class CalendarEventBlock extends StatelessWidget {
   final ScheduledTask task;
   final bool compact;
+  final VoidCallback? onTap;
 
   const CalendarEventBlock({
     super.key,
     required this.task,
     this.compact = false,
+    this.onTap,
   });
 
   @override
@@ -111,7 +113,10 @@ class CalendarEventBlock extends StatelessWidget {
       canvas,
       struck || task.isAllDay ? 0.08 : 0.12,
     );
-    return DecoratedBox(
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: DecoratedBox(
       decoration: BoxDecoration(
         color: wash,
         borderRadius: BorderRadius.circular(4),
@@ -138,6 +143,7 @@ class CalendarEventBlock extends StatelessWidget {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -148,6 +154,7 @@ class DayTimeline extends StatelessWidget {
   final bool showHourLabels;
   final int? nowMinutes;
   final bool compact;
+  final ValueChanged<ScheduledTask>? onTaskTap;
 
   const DayTimeline({
     super.key,
@@ -156,6 +163,7 @@ class DayTimeline extends StatelessWidget {
     this.showHourLabels = false,
     this.nowMinutes,
     this.compact = false,
+    this.onTaskTap,
   });
 
   @override
@@ -214,7 +222,11 @@ class DayTimeline extends StatelessWidget {
       height: h.clamp(12.0, dayHeight),
       left: block.lane * laneW + 1,
       width: (laneW - 2).clamp(4.0, totalWidth),
-      child: CalendarEventBlock(task: block.task, compact: compact),
+      child: CalendarEventBlock(
+        task: block.task,
+        compact: compact,
+        onTap: onTaskTap == null ? null : () => onTaskTap!(block.task),
+      ),
     );
   }
 }
@@ -381,11 +393,13 @@ class HourRail extends StatelessWidget {
 class AllDayStack extends StatelessWidget {
   final List<ScheduledTask> tasks;
   final bool compact;
+  final ValueChanged<ScheduledTask>? onTaskTap;
 
   const AllDayStack({
     super.key,
     required this.tasks,
     this.compact = false,
+    this.onTaskTap,
   });
 
   static double heightFor(int count) {
@@ -408,7 +422,11 @@ class AllDayStack extends StatelessWidget {
               child: SizedBox(
                 height: kAllDayRowHeight - 4,
                 width: double.infinity,
-                child: CalendarEventBlock(task: task, compact: compact),
+                child: CalendarEventBlock(
+                  task: task,
+                  compact: compact,
+                  onTap: onTaskTap == null ? null : () => onTaskTap!(task),
+                ),
               ),
             ),
         ],

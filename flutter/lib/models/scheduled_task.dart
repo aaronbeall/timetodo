@@ -18,7 +18,7 @@ class ScheduledTask {
   String get id => task.id;
   String get label => task.label;
   Color get color => task.color;
-  bool get isAllDay => task.isAllDay;
+  bool get isAllDay => occurrence?.isAllDay ?? task.isAllDay;
   RepeatType get repeatType => task.repeatType;
   int? get repeatInterval => task.repeatInterval;
   List<int>? get repeatWeekdays => task.repeatWeekdays;

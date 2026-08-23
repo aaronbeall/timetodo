@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:timetodo/models/scheduled_task.dart';
+import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/calendar_timeline.dart';
@@ -29,7 +30,9 @@ IconData _spanIcon(_CalSpan span) => switch (span) {
     };
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({super.key});
+  final ValueChanged<Task>? onEditTask;
+
+  const CalendarScreen({super.key, this.onEditTask});
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -218,6 +221,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
       size: size,
       animate: false,
       showNow: isToday,
+      onTaskTap: _showInstance,
+    );
+  }
+
+  void _showInstance(ScheduledTask task) {
+    showTaskSummarySheet(
+      context,
+      task: task,
+      now: TimeOfDay.now(),
+      onEdit: () => widget.onEditTask?.call(task.task),
     );
   }
 
@@ -259,12 +272,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       TaskListItem(
                         task: task,
                         currentTime: now,
-                        onTap: () => showTaskSummarySheet(
-                          context,
-                          task: task,
-                          now: now,
-                          onEdit: () {},
-                        ),
+                        onTap: () => _showInstance(task),
                         onSnooze: () {
                           final undo = provider.snoozeTask(task.id, _focus);
                           showChangeToast(
@@ -337,7 +345,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             child: AxisCaption(text: 'All day'),
                           ),
                         ),
-                        Expanded(child: AllDayStack(tasks: allDay)),
+                        Expanded(
+                          child: AllDayStack(
+                            tasks: allDay,
+                            onTaskTap: _showInstance,
+                          ),
+                        ),
                       ],
                     ),
                     Row(
@@ -349,6 +362,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             tasks: items,
                             hourHeight: 44,
                             nowMinutes: _nowMinutesOn(_focus),
+                            onTaskTap: _showInstance,
                           ),
                         ),
                       ],
@@ -437,6 +451,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             child: AllDayStack(
                               tasks: allDayTasks(perDay[i]),
                               compact: true,
+                              onTaskTap: _showInstance,
                             ),
                           ),
                         ),
@@ -464,6 +479,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             hourHeight: 28,
                             nowMinutes: _nowMinutesOn(days[i]),
                             compact: true,
+                            onTaskTap: _showInstance,
                           ),
                         ),
                       ),

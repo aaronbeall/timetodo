@@ -55,6 +55,7 @@ class Task {
     DateTime? startDate,
     DateTime? endDate,
     bool clearEndDate = false,
+    bool clearTimes = false,
     RepeatType? repeatType,
     int? repeatInterval,
     List<int>? repeatWeekdays,
@@ -65,8 +66,8 @@ class Task {
     return Task(
       id: id ?? this.id,
       label: label ?? this.label,
-      startTime: startTime ?? this.startTime,
-      endTime: endTime ?? this.endTime,
+      startTime: clearTimes ? null : (startTime ?? this.startTime),
+      endTime: clearTimes ? null : (endTime ?? this.endTime),
       isAllDay: isAllDay ?? this.isAllDay,
       color: color ?? this.color,
       startDate: startDate ?? this.startDate,

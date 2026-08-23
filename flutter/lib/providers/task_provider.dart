@@ -159,6 +159,30 @@ class TaskProvider extends ChangeNotifier {
     return addTask(clone);
   }
 
+  TaskOccurrence _baseOccurrence(String taskId, DateTime date) {
+    final day = dateOnly(date);
+    return _occurrence(taskId, day) ??
+        TaskOccurrence(
+          id: TaskOccurrence.idFor(taskId, day),
+          taskId: taskId,
+          date: day,
+        );
+  }
+
+  void _upsertOccurrence(TaskOccurrence next) {
+    final i = _occurrences.indexWhere((o) => o.id == next.id);
+    if (i == -1) {
+      _occurrences.add(next);
+    } else {
+      _occurrences[i] = next;
+    }
+  }
+
+  bool _hasTimeOverride(TaskOccurrence? o) {
+    if (o == null) return false;
+    return o.isAllDay != null || o.startTime != null || o.endTime != null;
+  }
+
   VoidCallback? _patchOccurrence(
     String taskId,
     DateTime day,
@@ -167,21 +191,9 @@ class TaskProvider extends ChangeNotifier {
     final task = taskById(taskId);
     if (task == null || task.isArchived || !task.occursOn(day)) return null;
     final date = dateOnly(day);
-    final existing = _occurrence(taskId, date);
-    final base = existing ??
-        TaskOccurrence(
-          id: TaskOccurrence.idFor(taskId, date),
-          taskId: taskId,
-          date: date,
-        );
+    final base = _baseOccurrence(taskId, date);
     return _undoable(() {
-      final next = update(base);
-      final i = _occurrences.indexWhere((o) => o.id == next.id);
-      if (i == -1) {
-        _occurrences.add(next);
-      } else {
-        _occurrences[i] = next;
-      }
+      _upsertOccurrence(update(base));
     });
   }
 
@@ -240,6 +252,151 @@ class TaskProvider extends ChangeNotifier {
       day,
       (base) => base.copyWith(isCanceled: true, isCompleted: false),
     );
+  }
+
+  VoidCallback? clearOccurrenceStatus(String taskId, DateTime day) {
+    return _patchOccurrence(
+      taskId,
+      day,
+      (base) => base.copyWith(isCompleted: false, isCanceled: false),
+    );
+  }
+
+  VoidCallback? setOccurrenceTimeframe(
+    String taskId,
+    DateTime day, {
+    required bool isAllDay,
+    TimeOfDay? startTime,
+    TimeOfDay? endTime,
+  }) {
+    return _patchOccurrence(taskId, day, (base) {
+      if (isAllDay) {
+        return base.copyWith(isAllDay: true, clearTimes: true);
+      }
+      return base.copyWith(
+        isAllDay: false,
+        startTime: startTime,
+        endTime: endTime,
+      );
+    });
+  }
+
+  /// Writes this day's times onto the series from [day] forward. Days before
+  /// [day] keep their existing times (frozen onto the occurrence if needed).
+  VoidCallback? applyTimesToFollowing(String taskId, DateTime day) {
+    final task = taskById(taskId);
+    if (task == null) return null;
+    final from = dateOnly(day);
+    if (!task.occursOn(from)) return null;
+    final scheduled = ScheduledTask(
+      task: task,
+      date: from,
+      occurrence: _occurrence(taskId, from),
+    );
+    return _undoable(() {
+      _pushTimesToFollowing(
+        taskId: taskId,
+        from: from,
+        newAllDay: scheduled.isAllDay,
+        newStart: scheduled.startTime,
+        newEnd: scheduled.endTime,
+      );
+    });
+  }
+
+  /// One undoable write for instance-sheet edits (times, status, following).
+  VoidCallback? commitOccurrenceEdits({
+    required String taskId,
+    required DateTime day,
+    required bool writeTimes,
+    required bool isAllDay,
+    TimeOfDay? startTime,
+    TimeOfDay? endTime,
+    required bool writeStatus,
+    required bool isCompleted,
+    required bool isCanceled,
+    required bool applyFollowing,
+  }) {
+    if (!writeTimes && !writeStatus && !applyFollowing) return null;
+    final task = taskById(taskId);
+    final date = dateOnly(day);
+    if (task == null || task.isArchived || !task.occursOn(date)) return null;
+    return _undoable(() {
+      if (writeTimes || writeStatus) {
+        var next = _baseOccurrence(taskId, date);
+        if (writeTimes) {
+          next = isAllDay
+              ? next.copyWith(isAllDay: true, clearTimes: true)
+              : next.copyWith(
+                  isAllDay: false,
+                  startTime: startTime,
+                  endTime: endTime,
+                );
+        }
+        if (writeStatus) {
+          next = next.copyWith(
+            isCompleted: isCompleted,
+            isCanceled: isCanceled,
+          );
+        }
+        _upsertOccurrence(next);
+      }
+      if (applyFollowing) {
+        _pushTimesToFollowing(
+          taskId: taskId,
+          from: date,
+          newAllDay: isAllDay,
+          newStart: startTime,
+          newEnd: endTime,
+        );
+      }
+    });
+  }
+
+  void _pushTimesToFollowing({
+    required String taskId,
+    required DateTime from,
+    required bool newAllDay,
+    TimeOfDay? newStart,
+    TimeOfDay? newEnd,
+  }) {
+    final task = taskById(taskId);
+    if (task == null || !task.occursOn(from)) return;
+    final oldAllDay = task.isAllDay;
+    final oldStart = task.startTime;
+    final oldEnd = task.endTime;
+
+    var cursor = dateOnly(task.startDate);
+    while (cursor.isBefore(from)) {
+      if (task.occursOn(cursor) && !_hasTimeOverride(_occurrence(taskId, cursor))) {
+        _upsertOccurrence(
+          _baseOccurrence(taskId, cursor).copyWith(
+            isAllDay: oldAllDay,
+            startTime: oldAllDay ? null : oldStart,
+            endTime: oldAllDay ? null : oldEnd,
+            clearTimes: oldAllDay,
+          ),
+        );
+      }
+      cursor = cursor.add(const Duration(days: 1));
+    }
+
+    final index = _tasks.indexWhere((t) => t.id == taskId);
+    if (index != -1) {
+      _tasks[index] = task.copyWith(
+        isAllDay: newAllDay,
+        startTime: newAllDay ? null : newStart,
+        endTime: newAllDay ? null : newEnd,
+        clearTimes: newAllDay,
+      );
+    }
+
+    for (var i = 0; i < _occurrences.length; i++) {
+      final o = _occurrences[i];
+      if (o.taskId != taskId) continue;
+      if (dateOnly(o.date).isBefore(from)) continue;
+      _occurrences[i] = o.copyWith(clearTimes: true, inheritAllDay: true);
+    }
   }
 
   VoidCallback? doNowTask(String taskId, DateTime day, TimeOfDay now) {

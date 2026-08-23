@@ -98,7 +98,7 @@ class _MainScreenState extends State<MainScreen> {
             revealTaskId: _revealTaskId,
             revealTick: _revealTick,
           ),
-          const CalendarScreen(),
+          CalendarScreen(onEditTask: _openTaskEditor),
           const ReportsScreen(),
         ],
       ),

@@ -20,6 +20,7 @@ class TaskSnapshot {
                 date: o.date,
                 startTime: o.startTime,
                 endTime: o.endTime,
+                isAllDay: o.isAllDay,
                 isCompleted: o.isCompleted,
                 isCanceled: o.isCanceled,
                 updatedAt: o.updatedAt,

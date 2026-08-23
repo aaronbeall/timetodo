@@ -8,6 +8,8 @@ class TaskOccurrence {
   final DateTime date;
   final TimeOfDay? startTime;
   final TimeOfDay? endTime;
+  /// When set, overrides the series all-day flag for this day only.
+  final bool? isAllDay;
   final bool isCompleted;
   final bool isCanceled;
   final DateTime updatedAt;
@@ -18,6 +20,7 @@ class TaskOccurrence {
     required this.date,
     this.startTime,
     this.endTime,
+    this.isAllDay,
     this.isCompleted = false,
     this.isCanceled = false,
     DateTime? updatedAt,
@@ -29,9 +32,11 @@ class TaskOccurrence {
   TaskOccurrence copyWith({
     TimeOfDay? startTime,
     TimeOfDay? endTime,
+    bool? isAllDay,
     bool? isCompleted,
     bool? isCanceled,
     bool clearTimes = false,
+    bool inheritAllDay = false,
   }) {
     return TaskOccurrence(
       id: id,
@@ -39,6 +44,7 @@ class TaskOccurrence {
       date: date,
       startTime: clearTimes ? null : (startTime ?? this.startTime),
       endTime: clearTimes ? null : (endTime ?? this.endTime),
+      isAllDay: inheritAllDay ? null : (isAllDay ?? this.isAllDay),
       isCompleted: isCompleted ?? this.isCompleted,
       isCanceled: isCanceled ?? this.isCanceled,
       updatedAt: DateTime.now(),
@@ -55,6 +61,7 @@ class TaskOccurrence {
           : '${startTime!.hour}:${startTime!.minute}',
       'endTime':
           endTime == null ? null : '${endTime!.hour}:${endTime!.minute}',
+      'isAllDay': isAllDay,
       'isCompleted': isCompleted,
       'isCanceled': isCanceled,
       'updatedAt': updatedAt.toIso8601String(),
@@ -77,6 +84,7 @@ class TaskOccurrence {
       date: dateOnly(DateTime.parse(json['date'] as String)),
       startTime: parseTime(json['startTime'] as String?),
       endTime: parseTime(json['endTime'] as String?),
+      isAllDay: json['isAllDay'] as bool?,
       isCompleted: json['isCompleted'] as bool? ?? false,
       isCanceled: json['isCanceled'] as bool? ?? false,
       updatedAt: json['updatedAt'] != null

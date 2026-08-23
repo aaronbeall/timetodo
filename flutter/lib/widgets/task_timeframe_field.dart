@@ -5,16 +5,22 @@ class TaskTimeframeField extends StatelessWidget {
   final bool isAllDay;
   final TimeOfDay? startTime;
   final TimeOfDay? endTime;
-  final ValueChanged<bool> onAllDayChanged;
+  final ValueChanged<bool>? onAllDayChanged;
   final ValueChanged<(TimeOfDay start, TimeOfDay end)> onTimeframeChanged;
+  final bool showAllDayToggle;
+  final bool showTrailingTimeIcon;
+  final bool leadingIcons;
 
   const TaskTimeframeField({
     super.key,
     required this.isAllDay,
     required this.startTime,
     required this.endTime,
-    required this.onAllDayChanged,
+    this.onAllDayChanged,
     required this.onTimeframeChanged,
+    this.showAllDayToggle = true,
+    this.showTrailingTimeIcon = true,
+    this.leadingIcons = false,
   });
 
   @override
@@ -23,52 +29,107 @@ class TaskTimeframeField extends StatelessWidget {
         ? durationMinutes(startTime!, endTime!)
         : null;
 
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     return Column(
       children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('All day'),
-          value: isAllDay,
-          onChanged: onAllDayChanged,
-        ),
-        if (!isAllDay) ...[
-          ListTile(
+        if (showAllDayToggle && onAllDayChanged != null)
+          SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Timeframe'),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _rangeLabel(context),
+            title: const Text('All day'),
+            value: isAllDay,
+            onChanged: onAllDayChanged,
+          ),
+        if (!isAllDay) ...[
+          if (leadingIcons) ...[
+            _iconRow(
+              context,
+              icon: Icons.schedule_rounded,
+              label: 'Timeframe',
+              value: _rangeLabel(context),
+              onTap: () => _pickTimeframe(context),
+            ),
+            if (duration != null)
+              _iconRow(
+                context,
+                icon: Icons.timelapse_rounded,
+                label: 'Duration',
+                value: formatDurationMinutes(duration),
+                onTap: () => _pickDuration(context, duration),
+              ),
+          ] else ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Timeframe'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _rangeLabel(context),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (showTrailingTimeIcon) ...[
+                    const SizedBox(width: 8),
+                    Icon(Icons.schedule_rounded, color: muted),
+                  ],
+                ],
+              ),
+              onTap: () => _pickTimeframe(context),
+            ),
+            if (duration != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Duration'),
+                trailing: Text(
+                  formatDurationMinutes(duration),
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.schedule_rounded,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ],
-            ),
-            onTap: () => _pickTimeframe(context),
-          ),
-          if (duration != null)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Duration'),
-              trailing: Text(
-                formatDurationMinutes(duration),
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
+                onTap: () => _pickDuration(context, duration),
               ),
-              onTap: () => _pickDuration(context, duration),
-            ),
+          ],
         ],
       ],
+    );
+  }
+
+  Widget _iconRow(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: muted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.bodyLarge?.copyWith(color: muted),
+              ),
+            ),
+            Text(
+              value,
+              style: TextStyle(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
