@@ -264,7 +264,9 @@ class PolarClockPainter extends CustomPainter {
     canvas.drawPath(
       _roundedTrackPath(center, radius, width, startAngle, sweepAngle),
       Paint()
-        ..color = task.color.withOpacity(0.38)
+        ..color = task.color.withOpacity(
+          task.isUpcoming(currentTime) ? 0.95 : 0.38,
+        )
         ..style = PaintingStyle.fill,
     );
 

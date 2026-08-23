@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:timetodo/data/demo_schedule.dart';
@@ -352,7 +353,7 @@ class _TodayScreenState extends State<TodayScreen> {
                   final undo = taskProvider.snoozeTask(task.id);
                   showChangeToast(
                     context,
-                    message: 'Snoozed 15 min',
+                    message: 'Snoozed ${task.label} 15 min',
                     onUndo: undo,
                   );
                 },
@@ -360,7 +361,7 @@ class _TodayScreenState extends State<TodayScreen> {
                   final undo = taskProvider.extendTask(task.id);
                   showChangeToast(
                     context,
-                    message: 'Extended 15 min',
+                    message: 'Extended ${task.label} 15 min',
                     onUndo: undo,
                   );
                 },
@@ -368,7 +369,7 @@ class _TodayScreenState extends State<TodayScreen> {
                   final undo = taskProvider.completeTask(task.id);
                   showChangeToast(
                     context,
-                    message: 'Completed',
+                    message: 'Completed ${task.label}',
                     onUndo: undo,
                   );
                 },
@@ -376,7 +377,7 @@ class _TodayScreenState extends State<TodayScreen> {
                   final undo = taskProvider.cancelTask(task.id);
                   showChangeToast(
                     context,
-                    message: 'Skipped today',
+                    message: 'Skipped ${task.label}',
                     onUndo: undo,
                   );
                 },
@@ -385,7 +386,7 @@ class _TodayScreenState extends State<TodayScreen> {
                       taskProvider.doNowTask(task.id, _currentTime);
                   showChangeToast(
                     context,
-                    message: 'Started now',
+                    message: 'Started ${task.label} now',
                     onUndo: undo,
                   );
                   _scrollToTop();
@@ -715,7 +716,7 @@ class _ConnectorPainter extends CustomPainter {
   bool shouldRepaint(_ConnectorPainter oldDelegate) => oldDelegate.color != color;
 }
 
-class _UpcomingDeck extends StatelessWidget {
+class _UpcomingDeck extends StatefulWidget {
   static const itemExtent = TaskListItem.stackExtent;
   static const _baseScale = 0.96;
   static const _focal = 880.0;
@@ -749,11 +750,48 @@ class _UpcomingDeck extends StatelessWidget {
   });
 
   @override
+  State<_UpcomingDeck> createState() => _UpcomingDeckState();
+}
+
+class _UpcomingDeckState extends State<_UpcomingDeck> {
+  late List<double> _heights;
+
+  @override
+  void initState() {
+    super.initState();
+    _heights = List<double>.from(widget.extents);
+  }
+
+  @override
+  void didUpdateWidget(_UpcomingDeck oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.extents.length != widget.extents.length) {
+      _heights = List<double>.from(widget.extents);
+    }
+  }
+
+  void _reportHeight(int index, double height) {
+    if (index < 0 || index >= _heights.length) return;
+    if ((height - _heights[index]).abs() < 0.25) return;
+    setState(() {
+      _heights[index] = height;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final children = widget.children;
     if (children.isEmpty) return const SizedBox.shrink();
     final n = children.length;
-    final collapsed = collapsedHeight(extents);
-    final expanded = expandedHeight(extents);
+    while (_heights.length < n) {
+      _heights.add(_UpcomingDeck.itemExtent);
+    }
+    if (_heights.length > n) {
+      _heights = _heights.sublist(0, n);
+    }
+    final t = widget.t;
+    final collapsed = _UpcomingDeck.collapsedHeight(_heights);
+    final expanded = _UpcomingDeck.expandedHeight(_heights);
     final height = collapsed + (expanded - collapsed) * t;
 
     return SizedBox(
@@ -769,7 +807,7 @@ class _UpcomingDeck extends StatelessWidget {
               right: 0,
               child: Transform(
                 alignment: Alignment.topCenter,
-                transform: _paperTransform(_zFor(i, t)),
+                transform: _paperTransform(_zFor(i, t), t),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
@@ -780,7 +818,12 @@ class _UpcomingDeck extends StatelessWidget {
                       ),
                     ],
                   ),
-                  child: RepaintBoundary(child: children[i]),
+                  child: RepaintBoundary(
+                    child: _MeasureHeight(
+                      onChange: (h) => _reportHeight(i, h),
+                      child: children[i],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -789,18 +832,18 @@ class _UpcomingDeck extends StatelessWidget {
     );
   }
 
-  double _zFor(int i, double t) => i * _zStep * (1 - t);
+  double _zFor(int i, double t) => i * _UpcomingDeck._zStep * (1 - t);
 
   double _topFor(int i, double t) {
     var y = 0.0;
     for (var j = 0; j < i; j++) {
-      y += extents[j];
+      y += _heights[j];
     }
-    return _zFor(i, t) * _yPerZ + y * t;
+    return _zFor(i, t) * _UpcomingDeck._yPerZ + y * t;
   }
 
   BoxShadow _shadowFor(double z, Brightness brightness) {
-    final depth = (z / (_zStep * 7)).clamp(0.0, 1.0);
+    final depth = (z / (_UpcomingDeck._zStep * 7)).clamp(0.0, 1.0);
     final dark = brightness == Brightness.dark;
     final opacity = (dark ? 0.16 : 0.045) + depth * (dark ? 0.34 : 0.18);
     return BoxShadow(
@@ -810,12 +853,53 @@ class _UpcomingDeck extends StatelessWidget {
     );
   }
 
-  Matrix4 _paperTransform(double z) {
-    final scale = _baseScale * _focal / (_focal + z);
-    final tilt = math.min(z * _tiltPerZ, _maxTilt);
+  Matrix4 _paperTransform(double z, double t) {
+    final rest = 1.0 - (1.0 - _UpcomingDeck._baseScale) * (1 - t);
+    final scale = rest * _UpcomingDeck._focal / (_UpcomingDeck._focal + z);
+    final tilt = math.min(z * _UpcomingDeck._tiltPerZ, _UpcomingDeck._maxTilt);
     return Matrix4.identity()
-      ..setEntry(3, 2, _perspective)
+      ..setEntry(3, 2, _UpcomingDeck._perspective)
       ..rotateX(tilt)
       ..scale(scale, scale);
+  }
+}
+
+class _MeasureHeight extends SingleChildRenderObjectWidget {
+  final ValueChanged<double> onChange;
+
+  const _MeasureHeight({
+    required this.onChange,
+    required Widget child,
+  }) : super(child: child);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderMeasureHeight(onChange);
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderMeasureHeight renderObject,
+  ) {
+    renderObject.onChange = onChange;
+  }
+}
+
+class _RenderMeasureHeight extends RenderProxyBox {
+  _RenderMeasureHeight(this.onChange);
+
+  ValueChanged<double> onChange;
+  double? _last;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final height = size.height;
+    if (_last != null && (height - _last!).abs() < 0.25) return;
+    _last = height;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      onChange(height);
+    });
   }
 }

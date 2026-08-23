@@ -216,11 +216,40 @@ class TaskListItem extends StatelessWidget {
               const SizedBox(width: 8),
             ],
             Expanded(
-              child: Text(
-                task.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: titleStyle,
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      task.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                  ),
+                  if (_isMissed) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: ink.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'expired',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.2,
+                          color: ink.withOpacity(0.5),
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             const SizedBox(width: 8),

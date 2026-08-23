@@ -8,6 +8,23 @@ void main() {
   runApp(const TimeToDoApp());
 }
 
+SnackBarThemeData _snackBarTheme(Brightness brightness) {
+  final scheme = ColorScheme.fromSeed(
+    seedColor: Colors.deepPurple,
+    brightness: brightness,
+  );
+  return SnackBarThemeData(
+    behavior: SnackBarBehavior.floating,
+    backgroundColor: scheme.surfaceContainerHigh,
+    contentTextStyle: TextStyle(color: scheme.onSurface),
+    actionTextColor: scheme.primary,
+    elevation: 3,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(10),
+    ),
+  );
+}
+
 class TimeToDoApp extends StatelessWidget {
   const TimeToDoApp({super.key});
 
@@ -23,6 +40,7 @@ class TimeToDoApp extends StatelessWidget {
             brightness: Brightness.light,
           ),
           useMaterial3: true,
+          snackBarTheme: _snackBarTheme(Brightness.light),
         ),
         darkTheme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
@@ -30,6 +48,7 @@ class TimeToDoApp extends StatelessWidget {
             brightness: Brightness.dark,
           ),
           useMaterial3: true,
+          snackBarTheme: _snackBarTheme(Brightness.dark),
         ),
         home: const MainScreen(),
       ),
@@ -55,7 +74,10 @@ class _MainScreenState extends State<MainScreen> {
         index: _currentIndex,
         children: [
           const TodayScreen(),
-          TasksScreen(focusTick: _tasksFocusTick),
+          TasksScreen(
+            focusTick: _tasksFocusTick,
+            isActive: _currentIndex == 1,
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

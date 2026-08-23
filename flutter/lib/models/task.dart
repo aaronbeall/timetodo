@@ -19,7 +19,7 @@ class Task {
   DateTime date;
   RepeatType repeatType;
   int? repeatInterval; // For custom repeats (every N days/weeks)
-  List<int>? repeatWeekdays; // 0 = Sunday, 6 = Saturday
+  List<int>? repeatWeekdays; // DateTime.weekday: 1 = Monday … 7 = Sunday
   bool isSnoozed;
   bool isCompleted;
   bool isCanceled;
@@ -197,27 +197,31 @@ class Task {
     }
 
     if (repeatType == RepeatType.none) return false;
+    final daysDiff = DateTime(date.year, date.month, date.day)
+        .difference(DateTime(this.date.year, this.date.month, this.date.day))
+        .inDays;
+    if (daysDiff < 0) return false;
 
-    // Check if task should repeat on this date
     switch (repeatType) {
+      case RepeatType.none:
+        return false;
       case RepeatType.daily:
         return true;
       case RepeatType.weekly:
-        return date.weekday == this.date.weekday;
+        final days = repeatWeekdays;
+        if (days == null || days.isEmpty) {
+          return date.weekday == this.date.weekday;
+        }
+        return days.contains(date.weekday);
       case RepeatType.monthly:
         return date.day == this.date.day;
       case RepeatType.weekdays:
-        return date.weekday >= 1 && date.weekday <= 5;
+        return date.weekday >= DateTime.monday &&
+            date.weekday <= DateTime.friday;
       case RepeatType.custom:
-        if (repeatInterval != null && repeatWeekdays != null) {
-          final daysDiff = date.difference(this.date).inDays;
-          if (daysDiff >= 0 && daysDiff % repeatInterval! == 0) {
-            return repeatWeekdays!.contains(date.weekday % 7);
-          }
-        }
-        return false;
-      default:
-        return false;
+        final interval = repeatInterval ?? 1;
+        if (interval < 1) return false;
+        return daysDiff % interval == 0;
     }
   }
 }

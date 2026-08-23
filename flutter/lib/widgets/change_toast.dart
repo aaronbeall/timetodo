@@ -21,19 +21,32 @@ void showChangeToastOn(
   required String message,
   VoidCallback? onUndo,
 }) {
+  final theme = Theme.of(messenger.context);
+  final scheme = theme.colorScheme;
   messenger.clearSnackBars();
   messenger.showSnackBar(
     SnackBar(
-      content: Text(message),
+      content: Text(
+        message,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: scheme.onSurface,
+        ),
+      ),
       action: onUndo == null
           ? null
           : SnackBarAction(
               label: 'Undo',
+              textColor: scheme.primary,
               onPressed: onUndo,
             ),
+      backgroundColor: scheme.surfaceContainerHigh,
       behavior: SnackBarBehavior.floating,
       dismissDirection: DismissDirection.horizontal,
       duration: const Duration(seconds: 4),
+      elevation: 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
     ),
   );
 }
