@@ -335,6 +335,7 @@ class _DayStack extends StatelessWidget {
                 : ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         for (final slice in day.slices)
                           Expanded(
