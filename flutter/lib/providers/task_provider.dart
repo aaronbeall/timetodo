@@ -62,8 +62,8 @@ class TaskProvider extends ChangeNotifier {
 
   List<ScheduledTask> scheduledOn(DateTime date) {
     final day = dateOnly(date);
-    return activeTasks
-        .where((task) => task.occursOn(day))
+    return _tasks
+        .where((task) => !task.isArchived && task.occursOn(day))
         .map(
           (task) => ScheduledTask(
             task: task,
@@ -111,8 +111,60 @@ class TaskProvider extends ChangeNotifier {
     final index = _tasks.indexWhere((t) => t.id == updatedTask.id);
     if (index == -1) return null;
     return _undoable(() {
-      _tasks[index] = updatedTask.copyWith();
+      final old = _tasks[index];
+      final today = dateOnly(DateTime.now());
+      var next = updatedTask.copyWith();
+      if (old.isOpen(asOf: today) && dateOnly(old.startDate).isBefore(today)) {
+        _sealPastSeries(old, today);
+        if (dateOnly(next.startDate).isBefore(today)) {
+          next = next.copyWith(startDate: today);
+        }
+        _clearTimeOverridesOnOrAfter(old.id, today);
+      }
+      final i = _tasks.indexWhere((t) => t.id == next.id);
+      if (i != -1) _tasks[i] = next;
     });
+  }
+
+  /// Leaves days before [today] on a sealed copy of [old] so later series
+  /// edits do not rewrite history. Occurrences are only moved, never created.
+  void _sealPastSeries(Task old, DateTime today) {
+    final yesterday = today.subtract(const Duration(days: 1));
+    final historicId = '${old.id}_until_${dateKey(yesterday)}';
+    if (_tasks.any((t) => t.id == historicId)) return;
+    _tasks.add(
+      old.copyWith(
+        id: historicId,
+        endDate: yesterday,
+      ),
+    );
+    for (var i = 0; i < _occurrences.length; i++) {
+      final o = _occurrences[i];
+      if (o.taskId != old.id) continue;
+      if (!dateOnly(o.date).isBefore(today)) continue;
+      _occurrences[i] = TaskOccurrence(
+        id: TaskOccurrence.idFor(historicId, o.date),
+        taskId: historicId,
+        date: o.date,
+        startTime: o.startTime,
+        endTime: o.endTime,
+        isAllDay: o.isAllDay,
+        isCompleted: o.isCompleted,
+        isCanceled: o.isCanceled,
+        updatedAt: o.updatedAt,
+      );
+    }
+  }
+
+  void _clearTimeOverridesOnOrAfter(String taskId, DateTime from) {
+    final start = dateOnly(from);
+    for (var i = 0; i < _occurrences.length; i++) {
+      final o = _occurrences[i];
+      if (o.taskId != taskId) continue;
+      if (dateOnly(o.date).isBefore(start)) continue;
+      if (!_hasTimeOverride(o)) continue;
+      _occurrences[i] = o.copyWith(clearTimes: true, inheritAllDay: true);
+    }
   }
 
   VoidCallback? archiveTask(String id) {
