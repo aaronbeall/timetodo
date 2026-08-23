@@ -619,9 +619,51 @@ class TaskProvider extends ChangeNotifier {
     return completed / denom;
   }
 
+  String _rootSeriesId(String id) {
+    final i = id.indexOf('_until_');
+    return i == -1 ? id : id.substring(0, i);
+  }
+
   Iterable<Task> _lineage(Task task) {
-    final prefix = '${task.id}_until_';
-    return _tasks.where((t) => t.id == task.id || t.id.startsWith(prefix));
+    final root = _rootSeriesId(task.id);
+    final prefix = '${root}_until_';
+    return _tasks.where((t) => t.id == root || t.id.startsWith(prefix));
+  }
+
+  /// In-memory walk of one series through [asOf] (default today), max 730 days.
+  TaskSeriesStats seriesStats(Task task, {DateTime? asOf}) {
+    final today = dateOnly(asOf ?? DateTime.now());
+    var total = 0;
+    var completed = 0;
+    var skipped = 0;
+    for (final series in _lineage(task)) {
+      var cursor = dateOnly(series.startDate);
+      var last = today;
+      if (series.endDate != null) {
+        final ended = dateOnly(series.endDate!);
+        if (ended.isBefore(last)) last = ended;
+      }
+      if (last.isBefore(cursor)) continue;
+      if (last.difference(cursor).inDays > 730) {
+        cursor = last.subtract(const Duration(days: 730));
+      }
+      for (; !cursor.isAfter(last); cursor = cursor.add(const Duration(days: 1))) {
+        if (!series.occursOn(cursor)) continue;
+        total++;
+        final o = _occurrence(series.id, cursor);
+        if (o == null) continue;
+        if (o.isCompleted) {
+          completed++;
+        } else if (o.isCanceled) {
+          skipped++;
+        }
+      }
+    }
+    return TaskSeriesStats(
+      total: total,
+      completed: completed,
+      skipped: skipped,
+    );
   }
 
   ScheduledTask? _instanceOnLineage(Task live, DateTime day) {

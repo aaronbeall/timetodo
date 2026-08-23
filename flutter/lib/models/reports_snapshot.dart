@@ -29,6 +29,35 @@ class TaskStreakRow {
   const TaskStreakRow({required this.task, required this.streak});
 }
 
+/// Past-through-today counts for one series (including historic copies).
+class TaskSeriesStats {
+  final int total;
+  final int completed;
+  final int skipped;
+
+  const TaskSeriesStats({
+    required this.total,
+    required this.completed,
+    required this.skipped,
+  });
+
+  int get unresolved => total - completed - skipped;
+
+  /// Completions among non-skipped instances.
+  double? get completionRate {
+    final denom = completed + unresolved;
+    if (denom == 0) return null;
+    return completed / denom;
+  }
+
+  /// Skips among completed + skipped.
+  double? get skipRate {
+    final denom = completed + skipped;
+    if (denom == 0) return null;
+    return skipped / denom;
+  }
+}
+
 class ReportsSnapshot {
   final int streak;
   final int completed;

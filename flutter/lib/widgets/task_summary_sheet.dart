@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:timetodo/models/reports_snapshot.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/models/task_occurrence.dart';
@@ -194,6 +195,7 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
     final futureStatus = _usesFutureStatus(task, widget.now, today);
     final status = draft.status;
     final items = _statusItems(futureStatus: futureStatus);
+    final stats = context.watch<TaskProvider>().seriesStats(task.task);
 
     return SafeArea(
       child: Padding(
@@ -260,6 +262,17 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                               ),
                           ],
                         ),
+                        if (stats.total > 0) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            _seriesStatsLine(stats),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: muted.withValues(alpha: 0.75),
+                              fontWeight: FontWeight.w400,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -429,6 +442,21 @@ class _StatusRow extends StatelessWidget {
       ],
     );
   }
+}
+
+String _seriesStatsLine(TaskSeriesStats stats) {
+  final n = stats.total;
+  final noun = n == 1 ? 'instance' : 'instances';
+  final parts = <String>['$n $noun'];
+  final done = stats.completionRate;
+  if (done != null) {
+    parts.add('${(done * 100).round()}% completed');
+  }
+  final skip = stats.skipRate;
+  if (skip != null) {
+    parts.add('${(skip * 100).round()}% skipped');
+  }
+  return parts.join('  ·  ');
 }
 
 bool _usesFutureStatus(
