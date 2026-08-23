@@ -52,6 +52,10 @@ String dayOrdinal(int day) {
   }
 }
 
+Color taskWash(Color color, Color onto, [double opacity = 0.12]) {
+  return Color.alphaBlend(color.withOpacity(opacity), onto);
+}
+
 Color taskInkColor(Color base, Brightness brightness) {
   final hsl = HSLColor.fromColor(base);
   if (brightness == Brightness.dark) {

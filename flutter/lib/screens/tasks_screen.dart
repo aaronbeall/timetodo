@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
@@ -10,7 +9,7 @@ import 'package:timetodo/widgets/add_task_dialog.dart';
 import 'package:timetodo/widgets/change_toast.dart';
 import 'package:timetodo/time_utils.dart';
 
-enum _TasksFilter { day, all, archived }
+enum _TasksFilter { active, archived }
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({
@@ -21,7 +20,7 @@ class TasksScreen extends StatefulWidget {
     this.revealTick = 0,
   });
 
-  /// Bumped whenever the Tasks tab is selected so the list jumps to today.
+  /// Bumped whenever the Tasks tab is selected so editors commit.
   final int focusTick;
   final bool isActive;
   final String? revealTaskId;
@@ -32,10 +31,9 @@ class TasksScreen extends StatefulWidget {
 }
 
 class _TasksScreenState extends State<TasksScreen> {
-  DateTime _selectedDate = DateTime.now();
   String? _expandedTaskId;
   Task? _headingDraft;
-  _TasksFilter _filter = _TasksFilter.day;
+  _TasksFilter _filter = _TasksFilter.active;
   final _editorKey = GlobalKey<TaskEditorState>();
   final _listController = ScrollController();
   final _rowKeys = <String, GlobalKey>{};
@@ -52,7 +50,6 @@ class _TasksScreenState extends State<TasksScreen> {
     if (widget.focusTick != oldWidget.focusTick) {
       _editorKey.currentState?.commit();
       setState(() {
-        _selectedDate = DateTime.now();
         _expandedTaskId = null;
         _headingDraft = null;
       });
@@ -61,7 +58,6 @@ class _TasksScreenState extends State<TasksScreen> {
         widget.revealTaskId != null) {
       _editorKey.currentState?.commit();
       setState(() {
-        _selectedDate = DateTime.now();
         _expandedTaskId = widget.revealTaskId;
         _headingDraft = null;
       });
@@ -86,24 +82,6 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  void _previousDay() {
-    _editorKey.currentState?.commit();
-    setState(() {
-      _selectedDate = _selectedDate.subtract(const Duration(days: 1));
-      _expandedTaskId = null;
-      _headingDraft = null;
-    });
-  }
-
-  void _nextDay() {
-    _editorKey.currentState?.commit();
-    setState(() {
-      _selectedDate = _selectedDate.add(const Duration(days: 1));
-      _expandedTaskId = null;
-      _headingDraft = null;
-    });
-  }
-
   void _toggleTask(String taskId) {
     _editorKey.currentState?.commit();
     setState(() {
@@ -126,13 +104,8 @@ class _TasksScreenState extends State<TasksScreen> {
             child: SegmentedButton<_TasksFilter>(
               segments: const [
                 ButtonSegment(
-                  value: _TasksFilter.day,
-                  label: Text('Day'),
-                  icon: Icon(Icons.today_outlined),
-                ),
-                ButtonSegment(
-                  value: _TasksFilter.all,
-                  label: Text('All'),
+                  value: _TasksFilter.active,
+                  label: Text('Active'),
                   icon: Icon(Icons.inbox_outlined),
                 ),
                 ButtonSegment(
@@ -152,32 +125,6 @@ class _TasksScreenState extends State<TasksScreen> {
               },
             ),
           ),
-          if (_filter == _TasksFilter.day)
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: _previousDay,
-                ),
-                Text(
-                  DateFormat('EEEE, MMMM d, y').format(_selectedDate),
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: _nextDay,
-                ),
-              ],
-            ),
-          ),
 
           // Task List
           Expanded(
@@ -187,21 +134,9 @@ class _TasksScreenState extends State<TasksScreen> {
                 if (_filter == _TasksFilter.archived) {
                   tasks = [...taskProvider.archivedTasks]
                     ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
-                } else if (_filter == _TasksFilter.all) {
+                } else {
                   tasks = [...taskProvider.activeTasks]
                     ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
-                } else {
-                  final scheduled = taskProvider.getTasksForDate(_selectedDate);
-                  scheduled.sort((a, b) {
-                  if (a.isAllDay && !b.isAllDay) return 1;
-                  if (!a.isAllDay && b.isAllDay) return -1;
-                  if (a.startTime == null) return 1;
-                  if (b.startTime == null) return -1;
-                  final aMinutes = a.startTime!.hour * 60 + a.startTime!.minute;
-                  final bMinutes = b.startTime!.hour * 60 + b.startTime!.minute;
-                  return aMinutes.compareTo(bMinutes);
-                  });
-                  tasks = scheduled.map((s) => s.task).toList();
                 }
 
                 if (tasks.isEmpty) {
@@ -221,9 +156,7 @@ class _TasksScreenState extends State<TasksScreen> {
                         Text(
                           _filter == _TasksFilter.archived
                               ? 'No archived tasks'
-                              : _filter == _TasksFilter.all
-                              ? 'No tasks yet'
-                              : 'No tasks for this day',
+                              : 'No tasks yet',
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                 color: Theme.of(context)
                                     .colorScheme
@@ -260,9 +193,7 @@ class _TasksScreenState extends State<TasksScreen> {
                             leading: TaskTimeArc(
                               task: ScheduledTask(
                                 task: shown,
-                                date: _filter == _TasksFilter.day
-                                    ? _selectedDate
-                                    : shown.startDate,
+                                date: shown.startDate,
                               ),
                             ),
                             title: _TaskRowTitle(task: shown),
@@ -411,9 +342,7 @@ class _TasksScreenState extends State<TasksScreen> {
     final created = await showDialog<Task>(
       context: context,
       builder: (context) => AddTaskDialog(
-        initialDate: dateOnly(
-          _filter == _TasksFilter.day ? _selectedDate : DateTime.now(),
-        ),
+        initialDate: dateOnly(DateTime.now()),
         initialStartTime: TimeOfDay.now(),
       ),
     );

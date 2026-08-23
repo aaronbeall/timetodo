@@ -46,6 +46,8 @@ class PolarClock extends StatefulWidget {
   final List<ScheduledTask> tasks;
   final double size;
   final ValueChanged<ScheduledTask>? onTaskTap;
+  final bool animate;
+  final bool showNow;
 
   const PolarClock({
     super.key,
@@ -53,6 +55,8 @@ class PolarClock extends StatefulWidget {
     required this.tasks,
     this.size = 300,
     this.onTaskTap,
+    this.animate = true,
+    this.showNow = true,
   });
 
   @override
@@ -71,7 +75,11 @@ class _PolarClockState extends State<PolarClock>
   @override
   void initState() {
     super.initState();
-    _to = _snapshot(widget.tasks, widget.currentTime);
+    _to = _snapshot(
+      widget.tasks,
+      widget.currentTime,
+      fullColor: !widget.showNow,
+    );
     _from = Map.of(_to);
     _controller = AnimationController(vsync: this, duration: _animDuration);
     _curve = CurvedAnimation(
@@ -98,11 +106,15 @@ class _PolarClockState extends State<PolarClock>
   }
 
   void _syncArcs({required bool reduce}) {
-    final next = _snapshot(widget.tasks, widget.currentTime);
+    final next = _snapshot(
+      widget.tasks,
+      widget.currentTime,
+      fullColor: !widget.showNow,
+    );
     if (_signature(next) == _signature(_to)) return;
     _from = _displayed(_curve.value);
     _to = next;
-    if (reduce) {
+    if (reduce || !widget.animate) {
       _from = Map.of(_to);
       _controller.value = 1;
     } else {
@@ -152,6 +164,7 @@ class _PolarClockState extends State<PolarClock>
                 trackColor: Theme.of(context).colorScheme.outlineVariant,
                 nowColor: Theme.of(context).colorScheme.onSurface,
                 nowOnColor: Theme.of(context).colorScheme.surface,
+                showNow: widget.showNow,
               ),
             ),
           );
@@ -221,7 +234,11 @@ class _PolarClockState extends State<PolarClock>
   }
 }
 
-Map<String, _ArcGeom> _snapshot(List<ScheduledTask> tasks, TimeOfDay now) {
+Map<String, _ArcGeom> _snapshot(
+  List<ScheduledTask> tasks,
+  TimeOfDay now, {
+  bool fullColor = false,
+}) {
   final timed = tasks
       .where((t) =>
           !t.isAllDay &&
@@ -243,7 +260,7 @@ Map<String, _ArcGeom> _snapshot(List<ScheduledTask> tasks, TimeOfDay now) {
         start: start.toDouble(),
         duration: duration.toDouble(),
         color: task.color,
-        opacity: task.isUpcoming(now) ? 0.95 : 0.38,
+        opacity: fullColor || task.isUpcoming(now) ? 0.95 : 0.38,
         lane: entry.key.toDouble(),
         laneCount: laneCount,
       );
@@ -395,6 +412,7 @@ class PolarClockPainter extends CustomPainter {
   final Color trackColor;
   final Color nowColor;
   final Color nowOnColor;
+  final bool showNow;
 
   PolarClockPainter({
     required this.currentTime,
@@ -402,6 +420,7 @@ class PolarClockPainter extends CustomPainter {
     required this.trackColor,
     required this.nowColor,
     required this.nowOnColor,
+    this.showNow = true,
   });
 
   /// Midnight at 9 o'clock (left), sweeping clockwise.
@@ -476,12 +495,14 @@ class PolarClockPainter extends CustomPainter {
       }
     }
 
-    _drawNowIndicator(
-      canvas,
-      center,
-      hourTrackRadius - hourTrackWidth / 2,
-      maxRadius,
-    );
+    if (showNow) {
+      _drawNowIndicator(
+        canvas,
+        center,
+        hourTrackRadius - hourTrackWidth / 2,
+        maxRadius,
+      );
+    }
   }
 
   void _drawHourTrack(
@@ -497,6 +518,8 @@ class PolarClockPainter extends CustomPainter {
       ..strokeCap = StrokeCap.butt;
 
     canvas.drawCircle(center, radius, backgroundPaint);
+
+    if (!showNow) return;
 
     final currentMinutes = currentTime.hour * 60 + currentTime.minute;
     if (currentMinutes <= 0) return;
@@ -524,7 +547,7 @@ class PolarClockPainter extends CustomPainter {
   ) {
     final trackWidth = (tracksOuter - tracksInner) * 0.72;
     final radius = tracksInner + trackWidth / 2;
-    const segmentMinutes = 3 * 60;
+    const segmentMinutes = 8 * 60;
     const gapMinutes = 16;
     final sweep =
         ((segmentMinutes - gapMinutes) / _minutesPerDay) * 2 * math.pi;
@@ -532,7 +555,7 @@ class PolarClockPainter extends CustomPainter {
       ..color = trackColor.withOpacity(0.16)
       ..style = PaintingStyle.fill;
 
-    for (var i = 0; i < 8; i++) {
+    for (var i = 0; i < 3; i++) {
       final startMinutes = i * segmentMinutes + gapMinutes / 2;
       canvas.drawPath(
         _roundedTrackPath(
@@ -574,6 +597,7 @@ class PolarClockPainter extends CustomPainter {
         ..style = PaintingStyle.fill,
     );
 
+    if (!showNow) return;
     final now = (currentTime.hour * 60 + currentTime.minute).toDouble();
     var nowU = now;
     final end = arc.start + arc.duration;
@@ -779,6 +803,7 @@ class PolarClockPainter extends CustomPainter {
         oldDelegate.arcs != arcs ||
         oldDelegate.trackColor != trackColor ||
         oldDelegate.nowColor != nowColor ||
-        oldDelegate.nowOnColor != nowOnColor;
+        oldDelegate.nowOnColor != nowOnColor ||
+        oldDelegate.showNow != showNow;
   }
 }
