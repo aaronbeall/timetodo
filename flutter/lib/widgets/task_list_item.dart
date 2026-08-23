@@ -11,6 +11,15 @@ class TaskListItem extends StatelessWidget {
   final VoidCallback? onDoNow;
   final bool showShadow;
 
+  /// Full row (action buttons) including the gap below the card.
+  static const stackExtent = 62.0;
+
+  /// Completed / skipped rows have no action buttons.
+  static const resolvedStackExtent = 44.0;
+
+  static double stackExtentFor(Task task) =>
+      task.isCompleted || task.isCanceled ? resolvedStackExtent : stackExtent;
+
   const TaskListItem({
     super.key,
     required this.task,

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/widgets/task_editor.dart';
+import 'package:timetodo/widgets/change_toast.dart';
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key, this.focusTick = 0});
@@ -169,13 +170,25 @@ class _TasksScreenState extends State<TasksScreen> {
                             TaskEditor(
                               task: task,
                               onSave: (updatedTask) {
-                                taskProvider.updateTask(updatedTask);
+                                final undo =
+                                    taskProvider.updateTask(updatedTask);
+                                showChangeToast(
+                                  context,
+                                  message: 'Task updated',
+                                  onUndo: undo,
+                                );
                                 setState(() {
                                   _expandedTaskId = null;
                                 });
                               },
                               onDelete: () {
-                                taskProvider.deleteTask(task.id);
+                                final undo =
+                                    taskProvider.deleteTask(task.id);
+                                showChangeToast(
+                                  context,
+                                  message: 'Task deleted',
+                                  onUndo: undo,
+                                );
                                 setState(() {
                                   _expandedTaskId = null;
                                 });
@@ -254,7 +267,12 @@ class _TasksScreenState extends State<TasksScreen> {
       date: _selectedDate,
     );
 
-    taskProvider.addTask(newTask);
+    final undo = taskProvider.addTask(newTask);
+    showChangeToast(
+      context,
+      message: 'Task added',
+      onUndo: undo,
+    );
     setState(() {
       _expandedTaskId = newTask.id;
     });

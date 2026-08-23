@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
+import 'package:timetodo/widgets/change_toast.dart';
 
 class AddTaskDialog extends StatefulWidget {
   final DateTime initialDate;
@@ -193,7 +194,14 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
       date: _selectedDate,
     );
 
-    Provider.of<TaskProvider>(context, listen: false).addTask(task);
+    final provider = Provider.of<TaskProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final undo = provider.addTask(task);
     Navigator.of(context).pop();
+    showChangeToastOn(
+      messenger,
+      message: 'Task added',
+      onUndo: undo,
+    );
   }
 }

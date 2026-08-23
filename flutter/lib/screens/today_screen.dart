@@ -9,6 +9,7 @@ import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_list_item.dart';
 import 'package:timetodo/widgets/add_task_dialog.dart';
+import 'package:timetodo/widgets/change_toast.dart';
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -282,7 +283,18 @@ class _TodayScreenState extends State<TodayScreen> {
                 child: PopupMenuButton<DemoScheduleKind>(
                   tooltip: 'Test schedule',
                   onSelected: (kind) {
-                    context.read<TaskProvider>().loadDemoSchedule(kind);
+                    final undo =
+                        context.read<TaskProvider>().loadDemoSchedule(kind);
+                    final label = switch (kind) {
+                      DemoScheduleKind.light => 'Light day',
+                      DemoScheduleKind.typical => 'Typical day',
+                      DemoScheduleKind.packed => 'Packed day',
+                    };
+                    showChangeToast(
+                      context,
+                      message: 'Loaded $label',
+                      onUndo: undo,
+                    );
                   },
                   itemBuilder: (context) => const [
                     PopupMenuItem(
@@ -336,12 +348,46 @@ class _TodayScreenState extends State<TodayScreen> {
                 task: task,
                 currentTime: _currentTime,
                 showShadow: shadow,
-                onSnooze: () => taskProvider.snoozeTask(task.id),
-                onExtend: () => taskProvider.extendTask(task.id),
-                onComplete: () => taskProvider.completeTask(task.id),
-                onCancel: () => taskProvider.cancelTask(task.id),
+                onSnooze: () {
+                  final undo = taskProvider.snoozeTask(task.id);
+                  showChangeToast(
+                    context,
+                    message: 'Snoozed 15 min',
+                    onUndo: undo,
+                  );
+                },
+                onExtend: () {
+                  final undo = taskProvider.extendTask(task.id);
+                  showChangeToast(
+                    context,
+                    message: 'Extended 15 min',
+                    onUndo: undo,
+                  );
+                },
+                onComplete: () {
+                  final undo = taskProvider.completeTask(task.id);
+                  showChangeToast(
+                    context,
+                    message: 'Completed',
+                    onUndo: undo,
+                  );
+                },
+                onCancel: () {
+                  final undo = taskProvider.cancelTask(task.id);
+                  showChangeToast(
+                    context,
+                    message: 'Skipped today',
+                    onUndo: undo,
+                  );
+                },
                 onDoNow: () {
-                  taskProvider.doNowTask(task.id, _currentTime);
+                  final undo =
+                      taskProvider.doNowTask(task.id, _currentTime);
+                  showChangeToast(
+                    context,
+                    message: 'Started now',
+                    onUndo: undo,
+                  );
                   _scrollToTop();
                 },
               );
@@ -359,11 +405,14 @@ class _TodayScreenState extends State<TodayScreen> {
                   (active.isNotEmpty || allDayOpen.isNotEmpty) &&
                       fanTasks.isNotEmpty;
               final n = fanTasks.length;
+              final fanExtents = fanTasks
+                  .map(TaskListItem.stackExtentFor)
+                  .toList(growable: false);
               final collapsed = n == 0
                   ? 0.0
-                  : _UpcomingDeck.collapsedHeight(n);
+                  : _UpcomingDeck.collapsedHeight(fanExtents);
               final expanded =
-                  n == 0 ? 0.0 : _UpcomingDeck.expandedHeight(n);
+                  n == 0 ? 0.0 : _UpcomingDeck.expandedHeight(fanExtents);
               final travel = math.max(0.0, expanded - collapsed);
 
               if (_fanCount != n) {
@@ -408,6 +457,7 @@ class _TodayScreenState extends State<TodayScreen> {
                                       builder: (context, t, _) {
                                         return _UpcomingDeck(
                                           t: t,
+                                          extents: fanExtents,
                                           children: fanChildren,
                                         );
                                       },
@@ -666,8 +716,7 @@ class _ConnectorPainter extends CustomPainter {
 }
 
 class _UpcomingDeck extends StatelessWidget {
-  static const itemExtent = 62.0;
-  static const _itemExtent = itemExtent;
+  static const itemExtent = TaskListItem.stackExtent;
   static const _baseScale = 0.96;
   static const _focal = 880.0;
   static const _zStep = 40.0;
@@ -676,16 +725,26 @@ class _UpcomingDeck extends StatelessWidget {
   static const _maxTilt = 0.22;
   static const _perspective = 0.0011;
 
-  static double collapsedHeight(int n) =>
-      _itemExtent + math.max(0, n - 1) * _zStep * _yPerZ;
+  static double collapsedHeight(List<double> extents) {
+    if (extents.isEmpty) return 0;
+    return extents.first + math.max(0, extents.length - 1) * _zStep * _yPerZ;
+  }
 
-  static double expandedHeight(int n) => n * _itemExtent;
+  static double expandedHeight(List<double> extents) {
+    var sum = 0.0;
+    for (final e in extents) {
+      sum += e;
+    }
+    return sum;
+  }
 
   final double t;
+  final List<double> extents;
   final List<Widget> children;
 
   const _UpcomingDeck({
     required this.t,
+    required this.extents,
     required this.children,
   });
 
@@ -693,8 +752,8 @@ class _UpcomingDeck extends StatelessWidget {
   Widget build(BuildContext context) {
     if (children.isEmpty) return const SizedBox.shrink();
     final n = children.length;
-    final collapsed = collapsedHeight(n);
-    final expanded = expandedHeight(n);
+    final collapsed = collapsedHeight(extents);
+    final expanded = expandedHeight(extents);
     final height = collapsed + (expanded - collapsed) * t;
 
     return SizedBox(
@@ -733,7 +792,11 @@ class _UpcomingDeck extends StatelessWidget {
   double _zFor(int i, double t) => i * _zStep * (1 - t);
 
   double _topFor(int i, double t) {
-    return _zFor(i, t) * _yPerZ + i * _itemExtent * t;
+    var y = 0.0;
+    for (var j = 0; j < i; j++) {
+      y += extents[j];
+    }
+    return _zFor(i, t) * _yPerZ + y * t;
   }
 
   BoxShadow _shadowFor(double z, Brightness brightness) {
