@@ -390,10 +390,7 @@ class _TasksScreenState extends State<TasksScreen> {
                     if (isExpanded) {
                       row = KeyedSubtree(key: _expandedRowKey, child: row);
                     }
-                    return _SlideOnLayoutChange(
-                      key: ValueKey(task.id),
-                      child: row,
-                    );
+                    return KeyedSubtree(key: ValueKey(task.id), child: row);
                   },
                 ),
               ),
@@ -547,77 +544,3 @@ class _TaskRowMeta extends StatelessWidget {
     );
   }
 }
-
-/// Animates a list child from its previous layout origin when it moves.
-class _SlideOnLayoutChange extends StatefulWidget {
-  final Widget child;
-
-  const _SlideOnLayoutChange({super.key, required this.child});
-
-  @override
-  State<_SlideOnLayoutChange> createState() => _SlideOnLayoutChangeState();
-}
-
-class _SlideOnLayoutChangeState extends State<_SlideOnLayoutChange>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  Offset? _lastLayout;
-  Offset _from = Offset.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 360),
-    );
-    WidgetsBinding.instance.addPostFrameCallback(_captureLayout);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant _SlideOnLayoutChange oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final previous = _lastLayout;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final next = _layoutOrigin();
-      _lastLayout = next;
-      if (previous == null || next == null) return;
-      final delta = previous - next;
-      if (delta.distance < 1) return;
-      _from = delta;
-      _controller.forward(from: 0);
-    });
-  }
-
-  void _captureLayout(Duration _) {
-    if (!mounted) return;
-    _lastLayout = _layoutOrigin();
-  }
-
-  Offset? _layoutOrigin() {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize || !box.attached) return null;
-    return box.localToGlobal(Offset.zero);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final t = Curves.easeInOutCubic.transform(_controller.value);
-        final offset = Offset.lerp(_from, Offset.zero, t)!;
-        return Transform.translate(offset: offset, child: child);
-      },
-      child: widget.child,
-    );
-  }
-}
-

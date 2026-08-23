@@ -10,6 +10,7 @@ import 'package:timetodo/screens/reports_screen.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/app_navigation.dart';
 import 'package:timetodo/widgets/polar_nav_icon.dart';
+import 'package:timetodo/widgets/sliding_indexed_stack.dart';
 
 void main() {
   runApp(const TimeToDoApp());
@@ -113,67 +114,84 @@ class _MainScreenState extends State<MainScreen> {
   void _onHomeTab() {
     final index = homeTabIndex.value;
     if (!mounted || index == _currentIndex) return;
-    setState(() => _currentIndex = index);
+    _goToTab(index, fromNotifier: true);
+  }
+
+  void _goToTab(int index, {bool fromNotifier = false}) {
+    if (index == _currentIndex) {
+      if (index == 1) {
+        setState(() => _tasksFocusTick++);
+      }
+      return;
+    }
+    setState(() {
+      _currentIndex = index;
+      if (!fromNotifier) homeTabIndex.value = index;
+      if (index == 1) {
+        _tasksFocusTick++;
+      }
+    });
   }
 
   void _openTaskEditor(Task task) {
     setState(() {
       _currentIndex = 1;
+      homeTabIndex.value = 1;
       _revealTaskId = task.id;
       _revealTick++;
+      _tasksFocusTick++;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          TodayScreen(onEditTask: _openTaskEditor),
-          TasksScreen(
-            focusTick: _tasksFocusTick,
-            isActive: _currentIndex == 1,
-            revealTaskId: _revealTaskId,
-            revealTick: _revealTick,
-          ),
-          CalendarScreen(onEditTask: _openTaskEditor),
-          const ReportsScreen(),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (int index) {
-          setState(() {
-            _currentIndex = index;
-            homeTabIndex.value = index;
-            if (index == 1) {
-              _tasksFocusTick++;
-            }
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: PolarNavIcon(),
-            selectedIcon: PolarNavIcon(selected: true),
-            label: 'Today',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.checklist_outlined),
-            selectedIcon: Icon(Icons.checklist),
-            label: 'Tasks',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label: 'Calendar',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights),
-            label: 'Stats',
-          ),
-        ],
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _goToTab(0);
+      },
+      child: Scaffold(
+        body: SlidingIndexedStack(
+          index: _currentIndex,
+          children: [
+            TodayScreen(onEditTask: _openTaskEditor),
+            TasksScreen(
+              focusTick: _tasksFocusTick,
+              isActive: _currentIndex == 1,
+              revealTaskId: _revealTaskId,
+              revealTick: _revealTick,
+            ),
+            CalendarScreen(onEditTask: _openTaskEditor),
+            const ReportsScreen(),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _currentIndex,
+          onDestinationSelected: _goToTab,
+          destinations: const [
+            NavigationDestination(
+              icon: PolarNavIcon(),
+              selectedIcon: PolarNavIcon(selected: true),
+              label: 'Today',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.checklist_outlined),
+              selectedIcon: Icon(Icons.checklist),
+              label: 'Tasks',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_month_outlined),
+              selectedIcon: Icon(Icons.calendar_month),
+              label: 'Calendar',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.insights_outlined),
+              selectedIcon: Icon(Icons.insights),
+              label: 'Stats',
+            ),
+          ],
+        ),
       ),
     );
   }
