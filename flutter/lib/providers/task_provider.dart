@@ -67,6 +67,26 @@ class TaskProvider extends ChangeNotifier {
     updateTask(task.copyWith(isCanceled: true, isCompleted: false));
   }
 
+  void doNowTask(String id, TimeOfDay now) {
+    final task = _tasks.firstWhere((t) => t.id == id);
+    if (task.startTime == null) return;
+    final start = task.startTime!.hour * 60 + task.startTime!.minute;
+    var duration = 30;
+    if (task.endTime != null) {
+      final end = task.endTime!.hour * 60 + task.endTime!.minute;
+      duration = start <= end ? end - start : 24 * 60 - start + end;
+      if (duration <= 0) duration = 30;
+    }
+    updateTask(
+      task.copyWith(
+        startTime: now,
+        endTime: _addMinutes(now, duration),
+        isCompleted: false,
+        isCanceled: false,
+      ),
+    );
+  }
+
   void loadDemoSchedule(DemoScheduleKind kind) {
     _tasks
       ..clear()

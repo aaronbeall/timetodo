@@ -159,6 +159,12 @@ class Task {
     return current < start;
   }
 
+  bool isMissed(TimeOfDay currentTime) {
+    if (isAllDay || isCompleted || isCanceled || isSnoozed) return false;
+    if (startTime == null) return false;
+    return !isActive(currentTime) && !isUpcoming(currentTime);
+  }
+
   static const snoozeGraceMinutes = 15;
 
   int minutesSinceStart(TimeOfDay currentTime) {

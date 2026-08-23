@@ -19,11 +19,24 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> {
   static const _minClock = 76.0;
+  /// Fan-out may start once this much of the stack (from its top) is on-screen.
+  static const _fanStartCapItems = 2.0;
+  /// Scroll distance over which the stack goes from collapsed to fully fanned.
+  static const _fanScrollItems = 5.0;
 
   TimeOfDay _currentTime = TimeOfDay.now();
   DateTime _currentDate = DateTime.now();
   final _scrollController = ScrollController();
+  final _fanKey = GlobalKey();
+  final _fanT = ValueNotifier(0.0);
+  final _fanTail = ValueNotifier(0.0);
   Timer? _timer;
+  double _viewportH = 0;
+  double _collapsedH = 0;
+  double _travel = 1;
+  int _fanCount = 0;
+  double? _fanDocTop;
+  bool? _fanClippedAtRest;
 
   @override
   void initState() {
@@ -35,11 +48,18 @@ class _TodayScreenState extends State<TodayScreen> {
         _currentDate = DateTime.now();
       });
     });
+    _scrollController.addListener(_updateFanFromScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _updateFanFromScroll();
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _scrollController.removeListener(_updateFanFromScroll);
+    _fanT.dispose();
+    _fanTail.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -67,8 +87,165 @@ class _TodayScreenState extends State<TodayScreen> {
     return time.hour >= 12;
   }
 
-  String _formatDate(DateTime date) {
-    return DateFormat("MMM d, ''yy").format(date);
+  String _ordinalSuffix(int day) {
+    if (day >= 11 && day <= 13) return 'th';
+    switch (day % 10) {
+      case 1:
+        return 'st';
+      case 2:
+        return 'nd';
+      case 3:
+        return 'rd';
+      default:
+        return 'th';
+    }
+  }
+
+  Widget _buildDateTitle(BuildContext context) {
+    final theme = Theme.of(context);
+    final base = theme.appBarTheme.titleTextStyle ??
+        theme.textTheme.titleLarge ??
+        const TextStyle(fontSize: 20, fontWeight: FontWeight.w500);
+    final onSurface = base.color ?? theme.colorScheme.onSurface;
+    final weekday = DateFormat.EEEE().format(_currentDate);
+    final month = DateFormat.MMMM().format(_currentDate);
+    final day = _currentDate.day;
+    final primarySize = (base.fontSize ?? 20) * 0.92;
+    final suffixSize = primarySize * 0.52;
+    final secondary = base.copyWith(
+      fontSize: primarySize * 0.62,
+      fontWeight: FontWeight.w400,
+      color: onSurface.withOpacity(0.4),
+      height: 1.15,
+      letterSpacing: 0.15,
+    );
+    final primary = base.copyWith(
+      fontSize: primarySize,
+      fontWeight: FontWeight.w500,
+      height: 1.15,
+    );
+
+    return IntrinsicWidth(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(weekday, style: secondary),
+              const SizedBox(width: 16),
+              const Spacer(),
+              Text('${_currentDate.year}', style: secondary),
+            ],
+          ),
+          Text.rich(
+            TextSpan(
+              style: primary,
+              children: [
+                TextSpan(text: '$month $day'),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.top,
+                  child: Transform.translate(
+                    offset: const Offset(1, 1),
+                    child: Text(
+                      _ordinalSuffix(day),
+                      style: primary.copyWith(
+                        fontSize: suffixSize,
+                        fontWeight: FontWeight.w600,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _updateFanFromScroll() {
+    if (!mounted || _fanCount == 0) {
+      _fanT.value = 0;
+      _fanTail.value = 0;
+      return;
+    }
+    final offset =
+        _scrollController.hasClients ? _scrollController.offset : 0.0;
+    final reduce =
+        mounted && MediaQuery.maybeOf(context)?.disableAnimations == true;
+    final t = _fanProgress(
+      offset: offset,
+      viewportH: _viewportH,
+      collapsedH: _collapsedH,
+      layoutTravel: _travel,
+      reduce: reduce,
+    );
+    _fanT.value = t;
+    _fanTail.value = _fanTailHeight(
+      t: t,
+      travel: _travel,
+      viewportH: _viewportH,
+      collapsedH: _collapsedH,
+    );
+  }
+
+  double _fanProgress({
+    required double offset,
+    required double viewportH,
+    required double collapsedH,
+    required double layoutTravel,
+    required bool reduce,
+  }) {
+    if (reduce || layoutTravel <= 0) return 1;
+    final itemH = _UpcomingDeck.itemExtent;
+    final startDepth = math.min(collapsedH, itemH * _fanStartCapItems);
+    final animTravel = math.max(
+      1.0,
+      math.min(layoutTravel, itemH * _fanScrollItems),
+    );
+    final fanContext = _fanKey.currentContext;
+    if (fanContext == null) return 0;
+    final fanBox = fanContext.findRenderObject();
+    final scrollable = Scrollable.maybeOf(fanContext);
+    if (fanBox is! RenderBox || !fanBox.hasSize || scrollable == null) {
+      return 0;
+    }
+    final viewportBox = scrollable.context.findRenderObject();
+    if (viewportBox is! RenderBox) return 0;
+    final fanTop = fanBox.localToGlobal(Offset.zero).dy -
+        viewportBox.localToGlobal(Offset.zero).dy;
+    final docTop = fanTop + offset;
+    if (_fanDocTop == null || offset.abs() < 0.5) {
+      _fanDocTop = docTop;
+      _fanClippedAtRest = docTop + startDepth > viewportH + 1;
+    }
+    final clipped = _fanClippedAtRest ?? false;
+    final restTop = _fanDocTop ?? docTop;
+    final raw = clipped
+        ? (offset - (restTop + startDepth - viewportH)) / animTravel
+        : offset / animTravel;
+    return raw.clamp(0.0, 1.0);
+  }
+
+  double _fanTailHeight({
+    required double t,
+    required double travel,
+    required double viewportH,
+    required double collapsedH,
+  }) {
+    final docTop = _fanDocTop ?? collapsedH;
+    const addH = 56.0;
+    const bottomPad = 32.0;
+    final slack = math.max(
+      0.0,
+      viewportH - docTop - collapsedH - addH - bottomPad,
+    );
+    return slack + travel * (1 - t);
   }
 
   int _startMinutes(Task task) {
@@ -76,38 +253,60 @@ class _TodayScreenState extends State<TodayScreen> {
     return task.startTime!.hour * 60 + task.startTime!.minute;
   }
 
+  int _recencyMinutes(Task task) {
+    final TimeOfDay? mark = task.endTime ?? task.startTime;
+    if (mark == null) return 24 * 60;
+    final now = _currentTime.hour * 60 + _currentTime.minute;
+    final at = mark.hour * 60 + mark.minute;
+    var ago = now - at;
+    if (ago < 0) ago += 24 * 60;
+    return ago;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_formatDate(_currentDate)),
         elevation: 0,
-        actions: [
-          PopupMenuButton<DemoScheduleKind>(
-            tooltip: 'Test schedule',
-            onSelected: (kind) {
-              context.read<TaskProvider>().loadDemoSchedule(kind);
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: DemoScheduleKind.light,
-                child: Text('Light day'),
-              ),
-              PopupMenuItem(
-                value: DemoScheduleKind.typical,
-                child: Text('Typical day'),
-              ),
-              PopupMenuItem(
-                value: DemoScheduleKind.packed,
-                child: Text('Packed day'),
+        toolbarHeight: 64,
+        automaticallyImplyLeading: false,
+        titleSpacing: 0,
+        title: SizedBox(
+          width: double.infinity,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              _buildDateTitle(context),
+              Align(
+                alignment: Alignment.centerRight,
+                child: PopupMenuButton<DemoScheduleKind>(
+                  tooltip: 'Test schedule',
+                  onSelected: (kind) {
+                    context.read<TaskProvider>().loadDemoSchedule(kind);
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: DemoScheduleKind.light,
+                      child: Text('Light day'),
+                    ),
+                    PopupMenuItem(
+                      value: DemoScheduleKind.typical,
+                      child: Text('Typical day'),
+                    ),
+                    PopupMenuItem(
+                      value: DemoScheduleKind.packed,
+                      child: Text('Packed day'),
+                    ),
+                  ],
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('Test schedule'),
+                  ),
+                ),
               ),
             ],
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text('Test schedule'),
-            ),
           ),
-        ],
+        ),
       ),
       body: Consumer<TaskProvider>(
         builder: (context, taskProvider, child) {
@@ -121,35 +320,31 @@ class _TodayScreenState extends State<TodayScreen> {
               .toList()
             ..sort((a, b) => _startMinutes(a).compareTo(_startMinutes(b)));
           final upcoming = timedOpen
-              .where((t) => !t.isActive(_currentTime))
+              .where((t) => t.isUpcoming(_currentTime))
               .toList()
             ..sort((a, b) => _startMinutes(a).compareTo(_startMinutes(b)));
           final allDayOpen = todayTasks
               .where((t) => t.isAllDay && !t.isCompleted && !t.isCanceled)
               .toList();
-          final settled = todayTasks
-              .where((t) => t.isCompleted || t.isCanceled)
-              .toList()
-            ..sort((a, b) => _startMinutes(a).compareTo(_startMinutes(b)));
+          final settled = [
+            ...timedOpen.where((t) => t.isMissed(_currentTime)),
+            ...todayTasks.where((t) => t.isCompleted || t.isCanceled),
+          ]..sort((a, b) => _recencyMinutes(a).compareTo(_recencyMinutes(b)));
+          final fanTasks = [...upcoming, ...settled];
 
-          Widget item(Task task) => TaskListItem(
+          Widget item(Task task, {bool shadow = false}) => TaskListItem(
                 task: task,
                 currentTime: _currentTime,
+                showShadow: shadow,
                 onSnooze: () => taskProvider.snoozeTask(task.id),
                 onExtend: () => taskProvider.extendTask(task.id),
                 onComplete: () => taskProvider.completeTask(task.id),
                 onCancel: () => taskProvider.cancelTask(task.id),
+                onDoNow: () {
+                  taskProvider.doNowTask(task.id, _currentTime);
+                  _scrollToTop();
+                },
               );
-
-          final listChildren = <Widget>[
-            ...active.map(item),
-            ...upcoming.map(
-              (task) => _UpcomingScale(child: item(task)),
-            ),
-            ...allDayOpen.map(item),
-            ...settled.map(item),
-            _buildAddTaskGhost(context, taskProvider),
-          ];
 
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -160,113 +355,174 @@ class _TodayScreenState extends State<TodayScreen> {
               const frameInset = 5.0;
               const pipPad = 12.0;
               final spacerHeight = maxClock + 16;
+              final hasConnector =
+                  (active.isNotEmpty || allDayOpen.isNotEmpty) &&
+                      fanTasks.isNotEmpty;
+              final n = fanTasks.length;
+              final collapsed = n == 0
+                  ? 0.0
+                  : _UpcomingDeck.collapsedHeight(n);
+              final expanded =
+                  n == 0 ? 0.0 : _UpcomingDeck.expandedHeight(n);
+              final travel = math.max(0.0, expanded - collapsed);
+
+              if (_fanCount != n) {
+                _fanCount = n;
+                _fanDocTop = null;
+                _fanClippedAtRest = null;
+              }
+              _viewportH = constraints.maxHeight;
+              _collapsedH = collapsed;
+              _travel = math.max(1.0, travel);
+
+              final fanChildren = fanTasks
+                  .map((task) => item(task, shadow: true))
+                  .toList();
+
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _updateFanFromScroll();
+              });
 
               return Stack(
-                children: [
-                  CustomScrollView(
-                    controller: _scrollController,
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: SizedBox(height: spacerHeight),
+                    children: [
+                      CustomScrollView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: SizedBox(height: spacerHeight),
+                          ),
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                            sliver: SliverList(
+                              delegate: SliverChildListDelegate([
+                                ...active.map(item),
+                                ...allDayOpen.map(item),
+                                if (hasConnector)
+                                  const _ActiveUpcomingConnector(),
+                                if (fanTasks.isNotEmpty)
+                                  KeyedSubtree(
+                                    key: _fanKey,
+                                    child: ValueListenableBuilder<double>(
+                                      valueListenable: _fanT,
+                                      builder: (context, t, _) {
+                                        return _UpcomingDeck(
+                                          t: t,
+                                          children: fanChildren,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                _buildAddTaskGhost(context, taskProvider),
+                                ValueListenableBuilder<double>(
+                                  valueListenable: _fanTail,
+                                  builder: (context, tail, _) {
+                                    if (tail <= 0) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return SizedBox(height: tail);
+                                  },
+                                ),
+                              ]),
+                            ),
+                          ),
+                        ],
                       ),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-                        sliver: SliverList(
-                          delegate: SliverChildListDelegate(listChildren),
-                        ),
-                      ),
-                    ],
-                  ),
-                  AnimatedBuilder(
-                    animation: _scrollController,
-                    builder: (context, _) {
-                      final offset = _scrollController.hasClients
-                          ? _scrollController.offset
-                          : 0.0;
-                      final remaining =
-                          (spacerHeight - offset).clamp(0.0, spacerHeight);
-                      final size = remaining.clamp(_minClock, maxClock);
-                      final t = maxClock == _minClock
-                          ? 1.0
-                          : ((maxClock - size) / (maxClock - _minClock))
-                              .clamp(0.0, 1.0);
-                      final docked = remaining <= _minClock;
-                      final frameT = docked ? 1.0 : 0.0;
-                      final bezel = frameInset * 2 * frameT;
-                      final left =
-                          (constraints.maxWidth - size - bezel) / 2;
-                      final top = docked
-                          ? pipPad
-                          : math.max(0.0, (remaining - size - bezel) / 2);
-                      final timeScale =
-                          (size / maxClock).clamp(0.42, 1.0);
-                      final theme = Theme.of(context);
+                      AnimatedBuilder(
+                        animation: _scrollController,
+                        builder: (context, _) {
+                          final offset = _scrollController.hasClients
+                              ? _scrollController.offset
+                              : 0.0;
+                          final remaining = (spacerHeight - offset)
+                              .clamp(0.0, spacerHeight);
+                          final size = remaining.clamp(_minClock, maxClock);
+                          final clockT = maxClock == _minClock
+                              ? 1.0
+                              : ((maxClock - size) / (maxClock - _minClock))
+                                  .clamp(0.0, 1.0);
+                          final docked = remaining <= _minClock;
+                          final frameT = docked ? 1.0 : 0.0;
+                          final bezel = frameInset * 2 * frameT;
+                          final left =
+                              (constraints.maxWidth - size - bezel) / 2;
+                          final top = docked
+                              ? pipPad
+                              : math.max(
+                                  0.0,
+                                  (remaining - size - bezel) / 2,
+                                );
+                          final timeScale =
+                              (size / maxClock).clamp(0.42, 1.0);
+                          final theme = Theme.of(context);
 
-                      return Positioned(
-                        left: left,
-                        top: top,
-                        child: IgnorePointer(
-                          ignoring: t < 0.82,
-                          child: GestureDetector(
-                            onTap: _scrollToTop,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: Color.lerp(
-                                  Colors.transparent,
-                                  theme.colorScheme.surface,
-                                  frameT,
-                                ),
-                                borderRadius: BorderRadius.circular(
-                                  8 + 10 * frameT,
-                                ),
-                                border: Border.all(
-                                  color: theme.colorScheme.onSurface
-                                      .withOpacity(0.18 * frameT),
-                                  width: 1.5 * frameT,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black
-                                        .withOpacity(0.22 * frameT),
-                                    blurRadius: 18 * frameT,
-                                    offset: Offset(0, 6 * frameT),
+                          return Positioned(
+                            left: left,
+                            top: top,
+                            child: IgnorePointer(
+                              ignoring: clockT < 0.82,
+                              child: GestureDetector(
+                                onTap: _scrollToTop,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Color.lerp(
+                                      Colors.transparent,
+                                      theme.colorScheme.surface,
+                                      frameT,
+                                    ),
+                                    borderRadius: BorderRadius.circular(
+                                      8 + 10 * frameT,
+                                    ),
+                                    border: Border.all(
+                                      color: theme.colorScheme.onSurface
+                                          .withOpacity(0.18 * frameT),
+                                      width: 1.5 * frameT,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black
+                                            .withOpacity(0.22 * frameT),
+                                        blurRadius: 18 * frameT,
+                                        offset: Offset(0, 6 * frameT),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.all(frameInset * frameT),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(
-                                    6 + 6 * frameT,
-                                  ),
-                                  child: SizedBox(
-                                    width: size,
-                                    height: size,
-                                    child: Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        PolarClock(
-                                          currentTime: _currentTime,
-                                          tasks: todayTasks,
-                                          size: size,
+                                  child: Padding(
+                                    padding:
+                                        EdgeInsets.all(frameInset * frameT),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(
+                                        6 + 6 * frameT,
+                                      ),
+                                      child: SizedBox(
+                                        width: size,
+                                        height: size,
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            PolarClock(
+                                              currentTime: _currentTime,
+                                              tasks: todayTasks,
+                                              size: size,
+                                            ),
+                                            Transform.scale(
+                                              scale: timeScale,
+                                              child:
+                                                  _buildClockCenter(context),
+                                            ),
+                                          ],
                                         ),
-                                        Transform.scale(
-                                          scale: timeScale,
-                                          child: _buildClockCenter(context),
-                                        ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              );
+                          );
+                        },
+                      ),
+                    ],
+                  );
             },
           );
         },
@@ -355,31 +611,148 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 }
 
-class _UpcomingScale extends StatelessWidget {
-  static const scale = 0.96;
-
-  final Widget child;
-
-  const _UpcomingScale({required this.child});
+class _ActiveUpcomingConnector extends StatelessWidget {
+  const _ActiveUpcomingConnector();
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Align(
-          alignment: Alignment.center,
-          child: SizedBox(
-            width: constraints.maxWidth * scale,
-            child: FittedBox(
-              fit: BoxFit.fitWidth,
-              child: SizedBox(
-                width: constraints.maxWidth,
-                child: child,
+    final color = Color.alphaBlend(
+      Theme.of(context).colorScheme.onSurface.withOpacity(0.16),
+      Theme.of(context).scaffoldBackgroundColor,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Center(
+        child: CustomPaint(
+          size: const Size(8, 18),
+          painter: _ConnectorPainter(color),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConnectorPainter extends CustomPainter {
+  final Color color;
+
+  _ConnectorPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+    final cx = size.width / 2;
+    const radius = 2.25;
+    const lineWidth = 2.0;
+    final top = 0.0;
+    final bottom = size.height - radius;
+    canvas.drawRRect(
+      RRect.fromLTRBR(
+        cx - lineWidth / 2,
+        top,
+        cx + lineWidth / 2,
+        bottom,
+        const Radius.circular(1),
+      ),
+      paint,
+    );
+    canvas.drawCircle(Offset(cx, bottom), radius, paint);
+  }
+
+  @override
+  bool shouldRepaint(_ConnectorPainter oldDelegate) => oldDelegate.color != color;
+}
+
+class _UpcomingDeck extends StatelessWidget {
+  static const itemExtent = 62.0;
+  static const _itemExtent = itemExtent;
+  static const _baseScale = 0.96;
+  static const _focal = 880.0;
+  static const _zStep = 40.0;
+  static const _yPerZ = 0.32;
+  static const _tiltPerZ = 0.0019;
+  static const _maxTilt = 0.22;
+  static const _perspective = 0.0011;
+
+  static double collapsedHeight(int n) =>
+      _itemExtent + math.max(0, n - 1) * _zStep * _yPerZ;
+
+  static double expandedHeight(int n) => n * _itemExtent;
+
+  final double t;
+  final List<Widget> children;
+
+  const _UpcomingDeck({
+    required this.t,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (children.isEmpty) return const SizedBox.shrink();
+    final n = children.length;
+    final collapsed = collapsedHeight(n);
+    final expanded = expandedHeight(n);
+    final height = collapsed + (expanded - collapsed) * t;
+
+    return SizedBox(
+      height: height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
+        children: [
+          for (var i = n - 1; i >= 0; i--)
+            Positioned(
+              top: _topFor(i, t),
+              left: 0,
+              right: 0,
+              child: Transform(
+                alignment: Alignment.topCenter,
+                transform: _paperTransform(_zFor(i, t)),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      _shadowFor(
+                        _zFor(i, t),
+                        Theme.of(context).brightness,
+                      ),
+                    ],
+                  ),
+                  child: RepaintBoundary(child: children[i]),
+                ),
               ),
             ),
-          ),
-        );
-      },
+        ],
+      ),
     );
+  }
+
+  double _zFor(int i, double t) => i * _zStep * (1 - t);
+
+  double _topFor(int i, double t) {
+    return _zFor(i, t) * _yPerZ + i * _itemExtent * t;
+  }
+
+  BoxShadow _shadowFor(double z, Brightness brightness) {
+    final depth = (z / (_zStep * 7)).clamp(0.0, 1.0);
+    final dark = brightness == Brightness.dark;
+    final opacity = (dark ? 0.16 : 0.045) + depth * (dark ? 0.34 : 0.18);
+    return BoxShadow(
+      color: Colors.black.withOpacity(opacity),
+      blurRadius: 8 + depth * 10,
+      offset: Offset(0, 2 + depth * 4),
+    );
+  }
+
+  Matrix4 _paperTransform(double z) {
+    final scale = _baseScale * _focal / (_focal + z);
+    final tilt = math.min(z * _tiltPerZ, _maxTilt);
+    return Matrix4.identity()
+      ..setEntry(3, 2, _perspective)
+      ..rotateX(tilt)
+      ..scale(scale, scale);
   }
 }

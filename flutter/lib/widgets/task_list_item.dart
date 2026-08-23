@@ -8,6 +8,8 @@ class TaskListItem extends StatelessWidget {
   final VoidCallback? onExtend;
   final VoidCallback? onComplete;
   final VoidCallback? onCancel;
+  final VoidCallback? onDoNow;
+  final bool showShadow;
 
   const TaskListItem({
     super.key,
@@ -17,11 +19,15 @@ class TaskListItem extends StatelessWidget {
     this.onExtend,
     this.onComplete,
     this.onCancel,
+    this.onDoNow,
+    this.showShadow = false,
   });
 
   bool get _isActive => task.isActive(currentTime);
+  bool get _isMissed => task.isMissed(currentTime);
   bool get _isDone => task.isCompleted || task.isCanceled;
   bool get _isAllDay => task.isAllDay;
+  bool get _isStruck => _isDone || _isMissed;
 
   String _formatTime(TimeOfDay time) {
     final hour = time.hour;
@@ -32,12 +38,62 @@ class TaskListItem extends StatelessWidget {
     return '$displayHour:${minute.toString().padLeft(2, '0')}$period';
   }
 
-  String _timeLabel() {
-    if (_isAllDay) return 'All day';
+  int _asMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
+
+  int _minutesUntil(TimeOfDay target) {
+    var delta = _asMinutes(target) - _asMinutes(currentTime);
+    if (delta < 0) delta += 24 * 60;
+    return delta;
+  }
+
+  int _minutesSince(TimeOfDay target) {
+    var delta = _asMinutes(currentTime) - _asMinutes(target);
+    if (delta < 0) delta += 24 * 60;
+    return delta;
+  }
+
+  String _formatDuration(int minutes) {
+    if (minutes < 1) return 'now';
+    if (minutes < 60) return '$minutes min';
+    final hours = minutes ~/ 60;
+    final rest = minutes % 60;
+    if (rest == 0) return hours == 1 ? '1 hr' : '$hours hr';
+    return '$hours hr $rest min';
+  }
+
+  String _exactTimeLabel() {
+    if (_isAllDay) return '';
     if (task.startTime != null && task.endTime != null) {
       return '${_formatTime(task.startTime!)}–${_formatTime(task.endTime!)}';
     }
     if (task.startTime != null) return _formatTime(task.startTime!);
+    return '';
+  }
+
+  String _relativeTimeLabel() {
+    if (_isAllDay) return 'All day';
+    if (task.startTime == null) return '';
+
+    if (_isActive && task.endTime != null) {
+      final left = _minutesUntil(task.endTime!);
+      if (left < 1) return 'ending now';
+      return '${_formatDuration(left)} left';
+    }
+
+    final start = _asMinutes(task.startTime!);
+    final now = _asMinutes(currentTime);
+    if (now < start) {
+      final until = _minutesUntil(task.startTime!);
+      if (until < 1) return 'starting now';
+      return 'in ${_formatDuration(until)}';
+    }
+
+    if (task.endTime != null) {
+      final ago = _minutesSince(task.endTime!);
+      if (ago < 1) return 'just ended';
+      return '${_formatDuration(ago)} ago';
+    }
+
     return '';
   }
 
@@ -55,15 +111,19 @@ class TaskListItem extends StatelessWidget {
         .toColor();
   }
 
+  Color _tint(Color color, double opacity, Color onto) {
+    return Color.alphaBlend(color.withOpacity(opacity), onto);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final canvas = theme.scaffoldBackgroundColor;
     final ink = _inkColor(task.color, theme.brightness);
-    final wash = _isDone
-        ? task.color.withOpacity(0.08)
-        : task.color.withOpacity(_isAllDay ? 0.08 : 0.12);
-    final fill = task.color.withOpacity(0.2);
-    final textOpacity = _isDone
+    final washOpacity = _isStruck || _isAllDay ? 0.08 : 0.12;
+    final wash = _tint(task.color, washOpacity, canvas);
+    final fill = _tint(task.color, 0.2, wash);
+    final textOpacity = _isStruck
         ? 0.55
         : _isAllDay
             ? 0.7
@@ -73,31 +133,57 @@ class TaskListItem extends StatelessWidget {
       fontWeight: FontWeight.w500,
       fontSize: 15,
       color: ink.withOpacity(textOpacity),
-      decoration: _isDone ? TextDecoration.lineThrough : null,
+      decoration: _isStruck ? TextDecoration.lineThrough : null,
       decorationColor: ink.withOpacity(0.5),
     );
 
     final timeStyle = theme.textTheme.bodySmall?.copyWith(
       fontWeight: FontWeight.w500,
+      fontSize: 13,
       color: ink.withOpacity(textOpacity * 0.92),
-      decoration: _isDone ? TextDecoration.lineThrough : null,
-      decorationColor: ink.withOpacity(0.4),
       letterSpacing: 0.1,
+      height: 1.15,
     );
+    final exactStyle = timeStyle?.copyWith(
+      fontSize: 10,
+      fontWeight: FontWeight.w400,
+      color: ink.withOpacity(textOpacity * 0.42),
+    );
+
+    final relative = _relativeTimeLabel();
+    final exact = _exactTimeLabel();
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: ClipRRect(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: showShadow
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(
+                      theme.brightness == Brightness.dark ? 0.28 : 0.08,
+                    ),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
+        ),
+        child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Stack(
           children: [
             Positioned.fill(child: ColoredBox(color: wash)),
-            if (_isActive)
+            if (_isActive || (_isAllDay && !_isDone))
               Positioned.fill(
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: FractionallySizedBox(
-                    widthFactor: task.elapsedFraction(currentTime),
+                    widthFactor: _isAllDay
+                        ? (currentTime.hour * 60 + currentTime.minute) /
+                            (24 * 60)
+                        : task.elapsedFraction(currentTime),
                     heightFactor: 1,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
@@ -129,7 +215,14 @@ class TaskListItem extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Text(_timeLabel(), style: timeStyle),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (relative.isNotEmpty) Text(relative, style: timeStyle),
+                if (exact.isNotEmpty) Text(exact, style: exactStyle),
+              ],
+            ),
             const SizedBox(width: 6),
             if (_isActive) ...[
               if (task.isInSnoozeGrace(currentTime))
@@ -153,6 +246,20 @@ class TaskListItem extends StatelessWidget {
                 onPressed: onComplete,
                 tooltip: 'Complete',
               ),
+            ] else if (_isMissed) ...[
+              _ActionButton(
+                icon: Icons.play_arrow_rounded,
+                color: ink,
+                onPressed: onDoNow,
+                tooltip: 'Do now',
+              ),
+              const SizedBox(width: 4),
+              _ActionButton(
+                icon: Icons.check_rounded,
+                color: ink,
+                onPressed: onComplete,
+                tooltip: 'Complete',
+              ),
             ] else if (!_isAllDay && !_isDone && onCancel != null)
               _ActionButton(
                 icon: Icons.close_rounded,
@@ -165,6 +272,7 @@ class TaskListItem extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

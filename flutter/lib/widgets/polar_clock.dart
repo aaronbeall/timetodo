@@ -81,7 +81,6 @@ class PolarClockPainter extends CustomPainter {
     final timedTasks = tasks
         .where((t) =>
             !t.isAllDay &&
-            !t.isCompleted &&
             !t.isCanceled &&
             t.startTime != null &&
             t.endTime != null)
@@ -259,24 +258,41 @@ class PolarClockPainter extends CustomPainter {
 
     final startMinutes = task.startTime!.hour * 60 + task.startTime!.minute;
     final endMinutes = task.endTime!.hour * 60 + task.endTime!.minute;
-
     final startAngle = _angleForMinutes(startMinutes);
-    final double sweepAngle;
-    if (endMinutes > startMinutes) {
-      sweepAngle = ((endMinutes - startMinutes) / _minutesPerDay) * 2 * math.pi;
-    } else {
-      sweepAngle =
-          ((_minutesPerDay - startMinutes + endMinutes) / _minutesPerDay) *
-              2 *
-              math.pi;
-    }
+    final sweepAngle = _sweepForMinutes(startMinutes, endMinutes);
 
     canvas.drawPath(
       _roundedTrackPath(center, radius, width, startAngle, sweepAngle),
       Paint()
-        ..color = task.color.withOpacity(0.9)
+        ..color = task.color.withOpacity(0.38)
         ..style = PaintingStyle.fill,
     );
+
+    if (!task.isActive(currentTime)) return;
+
+    final nowMinutes = currentTime.hour * 60 + currentTime.minute;
+    final remainingSweep = _sweepForMinutes(nowMinutes, endMinutes);
+    if (remainingSweep < 0.004) return;
+
+    canvas.drawPath(
+      _roundedTrackPath(
+        center,
+        radius,
+        width,
+        _angleForMinutes(nowMinutes),
+        remainingSweep,
+      ),
+      Paint()
+        ..color = task.color.withOpacity(0.95)
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  double _sweepForMinutes(int from, int to) {
+    if (to >= from) {
+      return ((to - from) / _minutesPerDay) * 2 * math.pi;
+    }
+    return ((_minutesPerDay - from + to) / _minutesPerDay) * 2 * math.pi;
   }
 
   Offset _polar(Offset center, double radius, double angle) {
