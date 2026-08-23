@@ -239,14 +239,8 @@ Map<String, _ArcGeom> _snapshot(
   TimeOfDay now, {
   bool fullColor = false,
 }) {
-  final timed = tasks
-      .where((t) =>
-          !t.isAllDay &&
-          !t.isCanceled &&
-          t.startTime != null &&
-          t.endTime != null)
-      .toList();
-  final lanes = _assignTasksToTracks(timed);
+  final timed = polarTimedTasks(tasks);
+  final lanes = assignPolarTracks(timed);
   final laneCount = lanes.length.toDouble();
   final map = <String, _ArcGeom>{};
   for (final entry in lanes.entries) {
@@ -269,7 +263,24 @@ Map<String, _ArcGeom> _snapshot(
   return map;
 }
 
-Map<int, List<ScheduledTask>> _assignTasksToTracks(List<ScheduledTask> tasks) {
+/// Timed, non-canceled tasks that appear as polar bands.
+List<ScheduledTask> polarTimedTasks(List<ScheduledTask> tasks) {
+  return tasks
+      .where((t) =>
+          !t.isAllDay &&
+          !t.isCanceled &&
+          t.startTime != null &&
+          t.endTime != null)
+      .toList();
+}
+
+/// Packs overlapping tasks onto concentric tracks (0 = innermost).
+/// Longer tasks are placed first. [maxTracks] drops bands that would need
+/// an extra concurrent lane.
+Map<int, List<ScheduledTask>> assignPolarTracks(
+  List<ScheduledTask> tasks, {
+  int? maxTracks,
+}) {
   final taskRanges = tasks.map((task) {
     final start = task.startTime!.hour * 60 + task.startTime!.minute;
     final end = task.endTime!.hour * 60 + task.endTime!.minute;
@@ -299,6 +310,9 @@ Map<int, List<ScheduledTask>> _assignTasksToTracks(List<ScheduledTask> tasks) {
     }
 
     if (trackIndex == -1) {
+      if (maxTracks != null && trackRanges.length >= maxTracks) {
+        continue;
+      }
       trackIndex = trackRanges.length;
       trackRanges.add([]);
       tracks[trackIndex] = [];
@@ -381,6 +395,7 @@ class _RenderArcHit extends RenderProxyBox {
 
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!hasSize) return false;
     if (onTapId == null || size == Size.zero || !size.contains(position)) {
       return false;
     }

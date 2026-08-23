@@ -118,7 +118,7 @@ VoidCallback? _commitDraft(
 
 String _commitMessage(String label, _InstanceDraft draft) {
   if (draft.applyFollowing && !draft.writesStatus) {
-    return 'Applied time to all scheduled $label';
+    return 'Applied time to future $label';
   }
   if (draft.writesStatus && !draft.timesChanged && !draft.applyFollowing) {
     return switch (draft.status) {
@@ -228,11 +228,37 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          _instanceDateLabel(day),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: muted,
-                          ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              _instanceDateLabel(day),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: muted,
+                              ),
+                            ),
+                            if (preview.repeatType != RepeatType.none)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: muted.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  _repeatLine(preview),
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: muted,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.2,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
@@ -282,59 +308,15 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                   ),
                 ],
               ],
-              if (preview.repeatType != RepeatType.none) ...[
-                const SizedBox(height: 10),
-                _SummaryLine(
-                  icon: Icons.repeat_rounded,
-                  text: _repeatLine(preview),
-                  color: muted,
-                ),
-              ],
               const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<_StatusChoice>(
-                        isExpanded: true,
-                        value: items.any((item) => item.value == status)
-                            ? status
-                            : null,
-                        hint: Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: _statusOption(
-                            context,
-                            status,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                        ),
-                        selectedItemBuilder: (context) => [
-                          for (final item in items)
-                            Align(
-                              alignment: AlignmentDirectional.centerStart,
-                              child: _statusOption(
-                                context,
-                                item.value,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                            ),
-                        ],
-                        borderRadius: BorderRadius.circular(12),
-                        items: [
-                          for (final item in items)
-                            DropdownMenuItem(
-                              value: item.value,
-                              child: _statusOption(context, item.value),
-                            ),
-                        ],
-                        onChanged: (next) {
-                          if (next == null) return;
-                          setState(() => draft.status = next);
-                        },
-                      ),
-                    ),
-                  ),
+              _StatusRow(
+                status: status,
+                actions: [
+                  for (final item in items)
+                    if (item.value != status) item,
                 ],
+                color: muted,
+                onSelect: (next) => setState(() => draft.status = next),
               ),
               const SizedBox(height: 18),
               if (canEditTimes)
@@ -349,8 +331,8 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                   icon: const Icon(Icons.event_repeat_outlined),
                   label: Text(
                     draft.applyFollowing
-                        ? 'Will apply to all scheduled'
-                        : 'Apply to all scheduled',
+                        ? 'Will apply to future'
+                        : 'Apply to future',
                   ),
                   style: draft.applyFollowing
                       ? FilledButton.styleFrom(
@@ -385,19 +367,19 @@ class _StatusItem {
 List<_StatusItem> _statusItems({required bool futureStatus}) {
   if (futureStatus) {
     return const [
-      _StatusItem(_StatusChoice.upcoming, 'Upcoming'),
-      _StatusItem(_StatusChoice.skipped, 'Skipped'),
+      _StatusItem(_StatusChoice.upcoming, 'Schedule'),
+      _StatusItem(_StatusChoice.skipped, 'Skip'),
     ];
   }
   return const [
-    _StatusItem(_StatusChoice.skipped, 'Skipped'),
+    _StatusItem(_StatusChoice.skipped, 'Skip'),
     _StatusItem(_StatusChoice.complete, 'Complete'),
   ];
 }
 
 String _statusLabel(_StatusChoice status) {
   return switch (status) {
-    _StatusChoice.complete => 'Complete',
+    _StatusChoice.complete => 'Completed',
     _StatusChoice.skipped => 'Skipped',
     _StatusChoice.expired => 'Expired',
     _StatusChoice.inProgress => 'In progress',
@@ -406,23 +388,47 @@ String _statusLabel(_StatusChoice status) {
   };
 }
 
-Widget _statusOption(
-  BuildContext context,
-  _StatusChoice status, {
-  Color? color,
-}) {
-  final theme = Theme.of(context);
-  final resolved = color ?? theme.colorScheme.onSurface;
-  return Row(
-    children: [
-      Icon(_statusIcon(status), size: 18, color: resolved),
-      const SizedBox(width: 10),
-      Text(
-        _statusLabel(status),
-        style: theme.textTheme.bodyLarge?.copyWith(color: resolved),
-      ),
-    ],
-  );
+class _StatusRow extends StatelessWidget {
+  final _StatusChoice status;
+  final List<_StatusItem> actions;
+  final Color color;
+  final ValueChanged<_StatusChoice> onSelect;
+
+  const _StatusRow({
+    required this.status,
+    required this.actions,
+    required this.color,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(_statusIcon(status), size: 18, color: color),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            _statusLabel(status),
+            style: theme.textTheme.bodyLarge?.copyWith(color: color),
+          ),
+        ),
+        for (final action in actions)
+          TextButton.icon(
+            onPressed: () => onSelect(action.value),
+            icon: Icon(_statusIcon(action.value), size: 18),
+            label: Text(action.label),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              foregroundColor: theme.colorScheme.primary,
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 bool _usesFutureStatus(

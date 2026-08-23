@@ -105,20 +105,17 @@ class CalendarEventBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final canvas = theme.scaffoldBackgroundColor;
     final struck = task.isCompleted || task.isCanceled;
     final ink = taskInkColor(task.color, theme.brightness);
-    final wash = taskWash(
-      task.color,
-      canvas,
-      struck || task.isAllDay ? 0.08 : 0.12,
+    final fill = task.color.withValues(
+      alpha: struck || task.isAllDay ? 0.16 : 0.28,
     );
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: DecoratedBox(
       decoration: BoxDecoration(
-        color: wash,
+        color: fill,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Padding(
@@ -186,8 +183,8 @@ class DayTimeline extends StatelessWidget {
                   right: 0,
                   child: Divider(
                     height: 1,
-                    color: theme.dividerColor.withOpacity(
-                      h % 6 == 0 ? 0.5 : 0.2,
+                    color: theme.dividerColor.withValues(
+                      alpha: h % 6 == 0 ? 0.18 : 0.07,
                     ),
                   ),
                 ),

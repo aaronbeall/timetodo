@@ -38,7 +38,7 @@ class _TasksScreenState extends State<TasksScreen> {
   final _repeatFilters = <String>{};
   final _editorKey = GlobalKey<TaskEditorState>();
   final _listController = ScrollController();
-  final _rowKeys = <String, GlobalKey>{};
+  final _expandedRowKey = GlobalKey();
 
   @override
   void dispose() {
@@ -72,9 +72,8 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   void _scrollToExpanded() {
-    final id = _expandedTaskId;
-    if (id == null) return;
-    final ctx = _rowKeys[id]?.currentContext;
+    if (_expandedTaskId == null) return;
+    final ctx = _expandedRowKey.currentContext;
     if (ctx == null) return;
     Scrollable.ensureVisible(
       ctx,
@@ -89,6 +88,19 @@ class _TasksScreenState extends State<TasksScreen> {
     setState(() {
       _expandedTaskId = _expandedTaskId == taskId ? null : taskId;
       _headingDraft = null;
+    });
+  }
+
+  /// Mutate after this frame so hover/InkWell hit-tests don't run on a row
+  /// that was removed during the same pointer-up.
+  void _afterRowSettles(VoidCallback action) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _expandedTaskId = null;
+        _headingDraft = null;
+      });
+      action();
     });
   }
 
@@ -110,13 +122,9 @@ class _TasksScreenState extends State<TasksScreen> {
         builder: (context, taskProvider, child) {
           final List<Task> source;
           if (_filter == _TasksFilter.archived) {
-            source = [...taskProvider.archivedTasks]
-              ..sort((a, b) =>
-                  a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+            source = [...taskProvider.archivedTasks]..sort(_compareSavedTime);
           } else {
-            source = [...taskProvider.activeTasks]
-              ..sort((a, b) =>
-                  a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+            source = [...taskProvider.activeTasks]..sort(_compareSavedTime);
           }
           final tags = _uniqueFilterTags(source);
           final activeTags =
@@ -255,11 +263,7 @@ class _TasksScreenState extends State<TasksScreen> {
                         isExpanded && _headingDraft?.id == task.id
                             ? _headingDraft!
                             : task;
-                    final rowKey =
-                        _rowKeys.putIfAbsent(task.id, GlobalKey.new);
-
-                    return Card(
-                      key: rowKey,
+                    Widget row = Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       child: Column(
                         children: [
@@ -297,16 +301,18 @@ class _TasksScreenState extends State<TasksScreen> {
                                 children: [
                                   TextButton.icon(
                                     onPressed: () {
-                                      final undo = taskProvider
-                                          .permanentlyDeleteTask(task.id);
-                                      showChangeToast(
-                                        context,
-                                        message: 'Deleted ${task.label}',
-                                        onUndo: undo,
-                                      );
-                                      setState(() {
-                                        _expandedTaskId = null;
-                                        _headingDraft = null;
+                                      final label = task.label;
+                                      final id = task.id;
+                                      final messenger =
+                                          ScaffoldMessenger.of(context);
+                                      _afterRowSettles(() {
+                                        final undo = taskProvider
+                                            .permanentlyDeleteTask(id);
+                                        showChangeToastOn(
+                                          messenger,
+                                          message: 'Deleted $label',
+                                          onUndo: undo,
+                                        );
                                       });
                                     },
                                     icon: const Icon(Icons.delete_outline),
@@ -320,16 +326,18 @@ class _TasksScreenState extends State<TasksScreen> {
                                   const Spacer(),
                                   FilledButton.tonalIcon(
                                     onPressed: () {
-                                      final undo =
-                                          taskProvider.unarchiveTask(task.id);
-                                      showChangeToast(
-                                        context,
-                                        message: 'Restored ${task.label}',
-                                        onUndo: undo,
-                                      );
-                                      setState(() {
-                                        _expandedTaskId = null;
-                                        _headingDraft = null;
+                                      final label = task.label;
+                                      final id = task.id;
+                                      final messenger =
+                                          ScaffoldMessenger.of(context);
+                                      _afterRowSettles(() {
+                                        final undo =
+                                            taskProvider.unarchiveTask(id);
+                                        showChangeToastOn(
+                                          messenger,
+                                          message: 'Restored $label',
+                                          onUndo: undo,
+                                        );
                                       });
                                     },
                                     icon: const Icon(Icons.unarchive_outlined),
@@ -355,22 +363,36 @@ class _TasksScreenState extends State<TasksScreen> {
                               onDraftChanged: (preview) {
                                 setState(() => _headingDraft = preview);
                               },
-                              onArchive: () {
-                                final undo =
-                                    taskProvider.archiveTask(task.id);
-                                showChangeToast(
-                                  context,
-                                  message: 'Archived ${task.label}',
-                                  onUndo: undo,
-                                );
+                              onMinimize: () {
                                 setState(() {
                                   _expandedTaskId = null;
                                   _headingDraft = null;
                                 });
                               },
+                              onArchive: () {
+                                final label = task.label;
+                                final id = task.id;
+                                final messenger =
+                                    ScaffoldMessenger.of(context);
+                                _afterRowSettles(() {
+                                  final undo = taskProvider.archiveTask(id);
+                                  showChangeToastOn(
+                                    messenger,
+                                    message: 'Archived $label',
+                                    onUndo: undo,
+                                  );
+                                });
+                              },
                             ),
                         ],
                       ),
+                    );
+                    if (isExpanded) {
+                      row = KeyedSubtree(key: _expandedRowKey, child: row);
+                    }
+                    return _SlideOnLayoutChange(
+                      key: ValueKey(task.id),
+                      child: row,
                     );
                   },
                 ),
@@ -384,6 +406,14 @@ class _TasksScreenState extends State<TasksScreen> {
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  int _compareSavedTime(Task a, Task b) {
+    if (a.isAllDay != b.isAllDay) return a.isAllDay ? -1 : 1;
+    final aMin = a.startTime == null ? 24 * 60 : minutesOf(a.startTime!);
+    final bMin = b.startTime == null ? 24 * 60 : minutesOf(b.startTime!);
+    if (aMin != bMin) return aMin.compareTo(bMin);
+    return a.label.toLowerCase().compareTo(b.label.toLowerCase());
   }
 
   List<String> _uniqueFilterTags(List<Task> tasks) {
@@ -514,6 +544,79 @@ class _TaskRowMeta extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Animates a list child from its previous layout origin when it moves.
+class _SlideOnLayoutChange extends StatefulWidget {
+  final Widget child;
+
+  const _SlideOnLayoutChange({super.key, required this.child});
+
+  @override
+  State<_SlideOnLayoutChange> createState() => _SlideOnLayoutChangeState();
+}
+
+class _SlideOnLayoutChangeState extends State<_SlideOnLayoutChange>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  Offset? _lastLayout;
+  Offset _from = Offset.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+    WidgetsBinding.instance.addPostFrameCallback(_captureLayout);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SlideOnLayoutChange oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final previous = _lastLayout;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final next = _layoutOrigin();
+      _lastLayout = next;
+      if (previous == null || next == null) return;
+      final delta = previous - next;
+      if (delta.distance < 1) return;
+      _from = delta;
+      _controller.forward(from: 0);
+    });
+  }
+
+  void _captureLayout(Duration _) {
+    if (!mounted) return;
+    _lastLayout = _layoutOrigin();
+  }
+
+  Offset? _layoutOrigin() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize || !box.attached) return null;
+    return box.localToGlobal(Offset.zero);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = Curves.easeInOutCubic.transform(_controller.value);
+        final offset = Offset.lerp(_from, Offset.zero, t)!;
+        return Transform.translate(offset: offset, child: child);
+      },
+      child: widget.child,
     );
   }
 }

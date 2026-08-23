@@ -8,6 +8,7 @@ import 'package:timetodo/screens/tasks_screen.dart';
 import 'package:timetodo/screens/calendar_screen.dart';
 import 'package:timetodo/screens/reports_screen.dart';
 import 'package:timetodo/models/task.dart';
+import 'package:timetodo/widgets/polar_nav_icon.dart';
 
 void main() {
   runApp(const TimeToDoApp());
@@ -131,13 +132,13 @@ class _MainScreenState extends State<MainScreen> {
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.today_outlined),
-            selectedIcon: Icon(Icons.today),
+            icon: PolarNavIcon(),
+            selectedIcon: PolarNavIcon(selected: true),
             label: 'Today',
           ),
           NavigationDestination(
-            icon: Icon(Icons.task_outlined),
-            selectedIcon: Icon(Icons.task),
+            icon: Icon(Icons.checklist_outlined),
+            selectedIcon: Icon(Icons.checklist),
             label: 'Tasks',
           ),
           NavigationDestination(

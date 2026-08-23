@@ -575,7 +575,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 right: BorderSide(
                                   color: Theme.of(context)
                                       .dividerColor
-                                      .withOpacity(0.35),
+                                      .withValues(alpha: 0.12),
                                 ),
                               ),
                             ),
@@ -601,7 +601,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               right: BorderSide(
                                 color: Theme.of(context)
                                     .dividerColor
-                                    .withOpacity(0.35),
+                                    .withValues(alpha: 0.12),
                               ),
                             ),
                           ),

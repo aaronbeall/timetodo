@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:timetodo/data/demo_schedule.dart';
 import 'package:timetodo/data/task_store.dart';
+import 'package:timetodo/models/reports_snapshot.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/models/task_occurrence.dart';
@@ -523,6 +524,135 @@ class TaskProvider extends ChangeNotifier {
       final resolved =
           items.every((t) => t.isCompleted || t.isCanceled);
       if (!resolved) break;
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return streak;
+  }
+
+  ReportsSnapshot reportsSnapshot({DateTime? asOf}) {
+    final today = dateOnly(asOf ?? DateTime.now());
+    var completed = 0;
+    var skipped = 0;
+    var unresolved = 0;
+
+    DateTime earliest = today;
+    for (final task in _tasks) {
+      if (task.isArchived) continue;
+      final start = dateOnly(task.startDate);
+      if (start.isBefore(earliest)) earliest = start;
+    }
+    if (today.difference(earliest).inDays > 730) {
+      earliest = today.subtract(const Duration(days: 730));
+    }
+
+    for (var cursor = earliest;
+        !cursor.isAfter(today);
+        cursor = cursor.add(const Duration(days: 1))) {
+      for (final item in scheduledOn(cursor)) {
+        if (item.isCompleted) {
+          completed++;
+        } else if (item.isCanceled) {
+          skipped++;
+        } else {
+          unresolved++;
+        }
+      }
+    }
+
+    final last7 = [
+      for (var i = 6; i >= 0; i--)
+        _dayReport(today.subtract(Duration(days: i))),
+    ];
+    final last14Rates = [
+      for (var i = 13; i >= 0; i--)
+        _dayCompletionRate(today.subtract(Duration(days: i))),
+    ];
+
+    final streaks = activeTasks
+        .map((task) => TaskStreakRow(task: task, streak: _taskStreak(task, today)))
+        .toList()
+      ..sort((a, b) {
+        final byStreak = b.streak.compareTo(a.streak);
+        if (byStreak != 0) return byStreak;
+        return a.task.label.toLowerCase().compareTo(b.task.label.toLowerCase());
+      });
+
+    return ReportsSnapshot(
+      streak: completionStreak(asOf: today),
+      completed: completed,
+      skipped: skipped,
+      unresolved: unresolved,
+      last7: last7,
+      last14Rates: last14Rates,
+      taskStreaks: streaks,
+    );
+  }
+
+  DayReport _dayReport(DateTime day) {
+    return DayReport(
+      day: dateOnly(day),
+      slices: [
+        for (final item in scheduledOn(day))
+          DayTaskSlice(
+            color: item.color,
+            completed: item.isCompleted,
+            skipped: item.isCanceled,
+          ),
+      ],
+    );
+  }
+
+  double? _dayCompletionRate(DateTime day) {
+    var completed = 0;
+    var open = 0;
+    for (final item in scheduledOn(day)) {
+      if (item.isCanceled) continue;
+      if (item.isCompleted) {
+        completed++;
+      } else {
+        open++;
+      }
+    }
+    final denom = completed + open;
+    if (denom == 0) return null;
+    return completed / denom;
+  }
+
+  Iterable<Task> _lineage(Task task) {
+    final prefix = '${task.id}_until_';
+    return _tasks.where((t) => t.id == task.id || t.id.startsWith(prefix));
+  }
+
+  ScheduledTask? _instanceOnLineage(Task live, DateTime day) {
+    for (final series in _lineage(live)) {
+      if (!series.occursOn(day)) continue;
+      return ScheduledTask(
+        task: series,
+        date: dateOnly(day),
+        occurrence: _occurrence(series.id, day),
+      );
+    }
+    return null;
+  }
+
+  int _taskStreak(Task task, DateTime asOf) {
+    var cursor = dateOnly(asOf);
+    var streak = 0;
+    for (var i = 0; i < 400; i++) {
+      final item = _instanceOnLineage(task, cursor);
+      if (item == null) {
+        if (streak == 0 && i == 0) {
+          cursor = cursor.subtract(const Duration(days: 1));
+          continue;
+        }
+        if (streak == 0) {
+          cursor = cursor.subtract(const Duration(days: 1));
+          continue;
+        }
+        break;
+      }
+      if (!item.isCompleted && !item.isCanceled) break;
       streak++;
       cursor = cursor.subtract(const Duration(days: 1));
     }
