@@ -29,7 +29,7 @@ class TaskStreakRow {
   const TaskStreakRow({required this.task, required this.streak});
 }
 
-/// Past-through-today counts for one series (including historic copies).
+/// Past-through-today counts for one series.
 class TaskSeriesStats {
   final int total;
   final int completed;

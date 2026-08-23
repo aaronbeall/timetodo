@@ -8,8 +8,8 @@ import 'package:timetodo/models/task_occurrence.dart';
 /// JSON snapshot in platform prefs (localStorage on web).
 /// Keeps [TaskStore] swappable for a later sync backend.
 class LocalTaskStore implements TaskStore {
-  static const _key = 'timetodo.snapshot.v1';
-  static const _version = 1;
+  static const _key = 'timetodo.snapshot.v2';
+  static const _version = 2;
 
   Map<String, dynamic> _map(dynamic value) =>
       Map<String, dynamic>.from(value as Map);

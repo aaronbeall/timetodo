@@ -122,9 +122,10 @@ class TaskDetailsForm extends StatelessWidget {
 
 String _activeRange(BuildContext context, Task task) {
   final loc = MaterialLocalizations.of(context);
-  final start = loc.formatMediumDate(task.startDate);
-  if (task.endDate == null) return start;
-  final end = loc.formatMediumDate(task.endDate!);
+  final start = loc.formatMediumDate(task.firstFrom);
+  final endDate = task.eras.last.to;
+  if (endDate == null) return start;
+  final end = loc.formatMediumDate(endDate);
   if (start == end) return start;
   return '$start – $end';
 }

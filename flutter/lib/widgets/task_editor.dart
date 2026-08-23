@@ -108,7 +108,6 @@ class TaskEditorState extends State<TaskEditor> {
       repeatType: _repeatType,
       repeatInterval: _repeatType == RepeatType.custom ? _repeatInterval : null,
       repeatWeekdays: _repeatType == RepeatType.weekly ? _repeatWeekdays : null,
-      isArchived: widget.task.isArchived,
       createdAt: widget.task.createdAt,
     );
   }
@@ -184,7 +183,6 @@ class TaskEditorState extends State<TaskEditor> {
       repeatType: _repeatType,
       repeatInterval: _repeatType == RepeatType.custom ? _repeatInterval : null,
       repeatWeekdays: _repeatType == RepeatType.weekly ? _repeatWeekdays : null,
-      isArchived: widget.task.isArchived,
       createdAt: widget.task.createdAt,
     );
   }

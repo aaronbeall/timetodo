@@ -61,10 +61,15 @@ class TaskProvider extends ChangeNotifier {
     return () => _restore(previous);
   }
 
+  bool _appearsOn(Task task, DateTime date) {
+    final day = dateOnly(date);
+    return task.occursOn(day, pinned: _occurrence(task.id, day) != null);
+  }
+
   List<ScheduledTask> scheduledOn(DateTime date) {
     final day = dateOnly(date);
     return _tasks
-        .where((task) => !task.isArchived && task.occursOn(day))
+        .where((task) => _appearsOn(task, day))
         .map(
           (task) => ScheduledTask(
             task: task,
@@ -105,7 +110,53 @@ class TaskProvider extends ChangeNotifier {
   VoidCallback addTask(Task task) {
     return _undoable(() {
       _tasks.add(task);
+      if (task.repeatType == RepeatType.none) {
+        _pinDay(task.id, task.startDate);
+      }
     });
+  }
+
+  void _pinDay(String taskId, DateTime day) {
+    _upsertOccurrence(_baseOccurrence(taskId, dateOnly(day)));
+  }
+
+  List<TaskEra> _revisedEras(Task old, TaskEra incoming, DateTime today) {
+    final eras = [...old.eras];
+    final last = eras.last;
+    final newFrom = incoming.from.isBefore(today) ? today : incoming.from;
+
+    if (last.sameRuleAndTime(incoming)) {
+      eras[eras.length - 1] = last.copyWith(
+        from: last.from.isBefore(today) ? last.from : incoming.from,
+        to: incoming.to,
+        clearTo: incoming.to == null,
+      );
+      return eras;
+    }
+
+    if (!last.from.isBefore(newFrom)) {
+      eras[eras.length - 1] = incoming.copyWith(
+        from: last.from,
+        to: incoming.to,
+        clearTo: incoming.to == null,
+      );
+      return eras;
+    }
+
+    if (last.isOpen && last.repeatType != RepeatType.none) {
+      final closed = newFrom.subtract(const Duration(days: 1));
+      if (!closed.isBefore(last.from)) {
+        eras[eras.length - 1] = last.copyWith(to: closed);
+      }
+    }
+    eras.add(
+      incoming.copyWith(
+        from: newFrom,
+        to: incoming.to,
+        clearTo: incoming.to == null,
+      ),
+    );
+    return eras;
   }
 
   VoidCallback? updateTask(Task updatedTask) {
@@ -114,47 +165,25 @@ class TaskProvider extends ChangeNotifier {
     return _undoable(() {
       final old = _tasks[index];
       final today = dateOnly(DateTime.now());
-      var next = updatedTask.copyWith();
-      if (old.isOpen(asOf: today) && dateOnly(old.startDate).isBefore(today)) {
-        _sealPastSeries(old, today);
-        if (dateOnly(next.startDate).isBefore(today)) {
-          next = next.copyWith(startDate: today);
-        }
+      var next = old.copyWith(
+        label: updatedTask.label,
+        color: updatedTask.color,
+      );
+      final scheduleChanged =
+          !old.currentEra.sameRuleAndTime(updatedTask.currentEra) ||
+              old.currentEra.from != updatedTask.currentEra.from ||
+              old.currentEra.to != updatedTask.currentEra.to;
+      if (scheduleChanged) {
+        next = next.copyWith(
+          eras: _revisedEras(old, updatedTask.currentEra, today),
+        );
         _clearTimeOverridesOnOrAfter(old.id, today);
       }
-      final i = _tasks.indexWhere((t) => t.id == next.id);
-      if (i != -1) _tasks[i] = next;
+      _tasks[index] = next;
+      if (next.repeatType == RepeatType.none) {
+        _pinDay(next.id, next.startDate);
+      }
     });
-  }
-
-  /// Leaves days before [today] on a sealed copy of [old] so later series
-  /// edits do not rewrite history. Occurrences are only moved, never created.
-  void _sealPastSeries(Task old, DateTime today) {
-    final yesterday = today.subtract(const Duration(days: 1));
-    final historicId = '${old.id}_until_${dateKey(yesterday)}';
-    if (_tasks.any((t) => t.id == historicId)) return;
-    _tasks.add(
-      old.copyWith(
-        id: historicId,
-        endDate: yesterday,
-      ),
-    );
-    for (var i = 0; i < _occurrences.length; i++) {
-      final o = _occurrences[i];
-      if (o.taskId != old.id) continue;
-      if (!dateOnly(o.date).isBefore(today)) continue;
-      _occurrences[i] = TaskOccurrence(
-        id: TaskOccurrence.idFor(historicId, o.date),
-        taskId: historicId,
-        date: o.date,
-        startTime: o.startTime,
-        endTime: o.endTime,
-        isAllDay: o.isAllDay,
-        isCompleted: o.isCompleted,
-        isCanceled: o.isCanceled,
-        updatedAt: o.updatedAt,
-      );
-    }
   }
 
   void _clearTimeOverridesOnOrAfter(String taskId, DateTime from) {
@@ -172,7 +201,11 @@ class TaskProvider extends ChangeNotifier {
     final index = _tasks.indexWhere((t) => t.id == id);
     if (index == -1) return null;
     return _undoable(() {
-      _tasks[index] = _tasks[index].copyWith(isArchived: true);
+      final task = _tasks[index];
+      if (!task.currentEra.isOpen) return;
+      final eras = [...task.eras];
+      eras[eras.length - 1] = eras.last.copyWith(to: dateOnly(DateTime.now()));
+      _tasks[index] = task.copyWith(eras: eras);
     });
   }
 
@@ -180,7 +213,16 @@ class TaskProvider extends ChangeNotifier {
     final index = _tasks.indexWhere((t) => t.id == id);
     if (index == -1) return null;
     return _undoable(() {
-      _tasks[index] = _tasks[index].copyWith(isArchived: false);
+      final task = _tasks[index];
+      final today = dateOnly(DateTime.now());
+      final last = task.currentEra;
+      if (last.isOpen) return;
+      _tasks[index] = task.copyWith(
+        eras: [
+          ...task.eras,
+          last.copyWith(from: today, clearTo: true),
+        ],
+      );
     });
   }
 
@@ -193,23 +235,41 @@ class TaskProvider extends ChangeNotifier {
     });
   }
 
-  VoidCallback restoreAsNew(Task archived, DateTime startDate) {
-    final clone = archived.copyWith(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      label: archived.label,
-      startTime: archived.startTime,
-      endTime: archived.endTime,
-      isAllDay: archived.isAllDay,
-      color: archived.color,
-      startDate: dateOnly(startDate),
-      clearEndDate: true,
-      repeatType: archived.repeatType,
-      repeatInterval: archived.repeatInterval,
-      repeatWeekdays: archived.repeatWeekdays,
-      isArchived: false,
-      createdAt: DateTime.now(),
-    );
-    return addTask(clone);
+  /// Reopens [archived] as the same series with a new era from [draft].
+  VoidCallback reopenTask(Task archived, Task draft) {
+    return _undoable(() {
+      final incoming = draft.currentEra.copyWith(
+        from: dateOnly(draft.startDate),
+        clearTo: true,
+      );
+      final index = _tasks.indexWhere((t) => t.id == archived.id);
+      if (index == -1) {
+        _tasks.add(
+          archived.copyWith(
+            label: draft.label,
+            color: draft.color,
+            eras: [...archived.eras, incoming],
+          ),
+        );
+      } else {
+        final old = _tasks[index];
+        final eras = [...old.eras];
+        if (eras.last.isOpen) {
+          final closed = incoming.from.subtract(const Duration(days: 1));
+          if (!closed.isBefore(eras.last.from)) {
+            eras[eras.length - 1] = eras.last.copyWith(to: closed);
+          }
+        }
+        _tasks[index] = old.copyWith(
+          label: draft.label,
+          color: draft.color,
+          eras: [...eras, incoming],
+        );
+      }
+      if (incoming.repeatType == RepeatType.none) {
+        _pinDay(archived.id, incoming.from);
+      }
+    });
   }
 
   TaskOccurrence _baseOccurrence(String taskId, DateTime date) {
@@ -242,7 +302,7 @@ class TaskProvider extends ChangeNotifier {
     TaskOccurrence Function(TaskOccurrence base) update,
   ) {
     final task = taskById(taskId);
-    if (task == null || task.isArchived || !task.occursOn(day)) return null;
+    if (task == null || !_appearsOn(task, day)) return null;
     final date = dateOnly(day);
     final base = _baseOccurrence(taskId, date);
     return _undoable(() {
@@ -340,7 +400,7 @@ class TaskProvider extends ChangeNotifier {
     final task = taskById(taskId);
     if (task == null) return null;
     final from = dateOnly(day);
-    if (!task.occursOn(from)) return null;
+    if (!_appearsOn(task, from)) return null;
     final scheduled = ScheduledTask(
       task: task,
       date: from,
@@ -373,7 +433,7 @@ class TaskProvider extends ChangeNotifier {
     if (!writeTimes && !writeStatus && !applyFollowing) return null;
     final task = taskById(taskId);
     final date = dateOnly(day);
-    if (task == null || task.isArchived || !task.occursOn(date)) return null;
+    if (task == null || !_appearsOn(task, date)) return null;
     return _undoable(() {
       if (writeTimes || writeStatus) {
         var next = _baseOccurrence(taskId, date);
@@ -414,34 +474,36 @@ class TaskProvider extends ChangeNotifier {
     TimeOfDay? newEnd,
   }) {
     final task = taskById(taskId);
-    if (task == null || !task.occursOn(from)) return;
-    final oldAllDay = task.isAllDay;
-    final oldStart = task.startTime;
-    final oldEnd = task.endTime;
+    if (task == null || !_appearsOn(task, from)) return;
 
-    var cursor = dateOnly(task.startDate);
+    var cursor = dateOnly(task.firstFrom);
     while (cursor.isBefore(from)) {
-      if (task.occursOn(cursor) && !_hasTimeOverride(_occurrence(taskId, cursor))) {
+      if (_appearsOn(task, cursor) &&
+          !_hasTimeOverride(_occurrence(taskId, cursor))) {
+        final era = task.eraCovering(cursor)!;
         _upsertOccurrence(
           _baseOccurrence(taskId, cursor).copyWith(
-            isAllDay: oldAllDay,
-            startTime: oldAllDay ? null : oldStart,
-            endTime: oldAllDay ? null : oldEnd,
-            clearTimes: oldAllDay,
+            isAllDay: era.isAllDay,
+            startTime: era.isAllDay ? null : era.startTime,
+            endTime: era.isAllDay ? null : era.endTime,
+            clearTimes: era.isAllDay,
           ),
         );
       }
       cursor = cursor.add(const Duration(days: 1));
     }
 
+    final incoming = task.currentEra.copyWith(
+      from: from,
+      isAllDay: newAllDay,
+      startTime: newAllDay ? null : newStart,
+      endTime: newAllDay ? null : newEnd,
+      clearTimes: newAllDay,
+      clearTo: true,
+    );
     final index = _tasks.indexWhere((t) => t.id == taskId);
     if (index != -1) {
-      _tasks[index] = task.copyWith(
-        isAllDay: newAllDay,
-        startTime: newAllDay ? null : newStart,
-        endTime: newAllDay ? null : newEnd,
-        clearTimes: newAllDay,
-      );
+      _tasks[index] = task.copyWith(eras: _revisedEras(task, incoming, from));
     }
 
     for (var i = 0; i < _occurrences.length; i++) {
@@ -484,6 +546,11 @@ class TaskProvider extends ChangeNotifier {
         ..clear()
         ..addAll(buildDemoSchedule(DateTime.now(), kind));
       _occurrences.clear();
+      for (final task in _tasks) {
+        if (task.repeatType == RepeatType.none) {
+          _pinDay(task.id, task.startDate);
+        }
+      }
     });
   }
 
@@ -538,8 +605,7 @@ class TaskProvider extends ChangeNotifier {
 
     DateTime earliest = today;
     for (final task in _tasks) {
-      if (task.isArchived) continue;
-      final start = dateOnly(task.startDate);
+      final start = dateOnly(task.firstFrom);
       if (start.isBefore(earliest)) earliest = start;
     }
     if (today.difference(earliest).inDays > 730) {
@@ -619,44 +685,29 @@ class TaskProvider extends ChangeNotifier {
     return completed / denom;
   }
 
-  String _rootSeriesId(String id) {
-    final i = id.indexOf('_until_');
-    return i == -1 ? id : id.substring(0, i);
-  }
-
-  Iterable<Task> _lineage(Task task) {
-    final root = _rootSeriesId(task.id);
-    final prefix = '${root}_until_';
-    return _tasks.where((t) => t.id == root || t.id.startsWith(prefix));
-  }
-
   /// In-memory walk of one series through [asOf] (default today), max 730 days.
   TaskSeriesStats seriesStats(Task task, {DateTime? asOf}) {
     final today = dateOnly(asOf ?? DateTime.now());
     var total = 0;
     var completed = 0;
     var skipped = 0;
-    for (final series in _lineage(task)) {
-      var cursor = dateOnly(series.startDate);
-      var last = today;
-      if (series.endDate != null) {
-        final ended = dateOnly(series.endDate!);
-        if (ended.isBefore(last)) last = ended;
-      }
-      if (last.isBefore(cursor)) continue;
-      if (last.difference(cursor).inDays > 730) {
-        cursor = last.subtract(const Duration(days: 730));
-      }
-      for (; !cursor.isAfter(last); cursor = cursor.add(const Duration(days: 1))) {
-        if (!series.occursOn(cursor)) continue;
-        total++;
-        final o = _occurrence(series.id, cursor);
-        if (o == null) continue;
-        if (o.isCompleted) {
-          completed++;
-        } else if (o.isCanceled) {
-          skipped++;
-        }
+    var cursor = dateOnly(task.firstFrom);
+    var last = today;
+    if (last.isBefore(cursor)) {
+      return const TaskSeriesStats(total: 0, completed: 0, skipped: 0);
+    }
+    if (last.difference(cursor).inDays > 730) {
+      cursor = last.subtract(const Duration(days: 730));
+    }
+    for (; !cursor.isAfter(last); cursor = cursor.add(const Duration(days: 1))) {
+      if (!_appearsOn(task, cursor)) continue;
+      total++;
+      final o = _occurrence(task.id, cursor);
+      if (o == null) continue;
+      if (o.isCompleted) {
+        completed++;
+      } else if (o.isCanceled) {
+        skipped++;
       }
     }
     return TaskSeriesStats(
@@ -667,15 +718,12 @@ class TaskProvider extends ChangeNotifier {
   }
 
   ScheduledTask? _instanceOnLineage(Task live, DateTime day) {
-    for (final series in _lineage(live)) {
-      if (!series.occursOn(day)) continue;
-      return ScheduledTask(
-        task: series,
-        date: dateOnly(day),
-        occurrence: _occurrence(series.id, day),
-      );
-    }
-    return null;
+    if (!_appearsOn(live, day)) return null;
+    return ScheduledTask(
+      task: live,
+      date: dateOnly(day),
+      occurrence: _occurrence(live.id, day),
+    );
   }
 
   int _taskStreak(Task task, DateTime asOf) {

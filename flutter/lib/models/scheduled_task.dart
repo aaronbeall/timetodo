@@ -15,16 +15,18 @@ class ScheduledTask {
     this.occurrence,
   });
 
+  TaskEra get era => task.eraCovering(date) ?? task.currentEra;
+
   String get id => task.id;
   String get label => task.label;
   Color get color => task.color;
-  bool get isAllDay => occurrence?.isAllDay ?? task.isAllDay;
-  RepeatType get repeatType => task.repeatType;
-  int? get repeatInterval => task.repeatInterval;
-  List<int>? get repeatWeekdays => task.repeatWeekdays;
+  bool get isAllDay => occurrence?.isAllDay ?? era.isAllDay;
+  RepeatType get repeatType => era.repeatType;
+  int? get repeatInterval => era.repeatInterval;
+  List<int>? get repeatWeekdays => era.repeatWeekdays;
 
-  TimeOfDay? get startTime => occurrence?.startTime ?? task.startTime;
-  TimeOfDay? get endTime => occurrence?.endTime ?? task.endTime;
+  TimeOfDay? get startTime => occurrence?.startTime ?? era.startTime;
+  TimeOfDay? get endTime => occurrence?.endTime ?? era.endTime;
   bool get isCompleted => occurrence?.isCompleted ?? false;
   bool get isCanceled => occurrence?.isCanceled ?? false;
 

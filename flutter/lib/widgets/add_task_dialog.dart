@@ -30,6 +30,7 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
   RepeatType _repeatType = RepeatType.none;
   int? _repeatInterval;
   List<int>? _repeatWeekdays;
+  Task? _sourceTask;
 
   @override
   void initState() {
@@ -138,7 +139,10 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
 
     final provider = Provider.of<TaskProvider>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
-    final undo = provider.addTask(task);
+    final source = _sourceTask;
+    final undo = source == null
+        ? provider.addTask(task)
+        : provider.reopenTask(source, task);
     Navigator.of(context).pop(task);
     showChangeToastOn(
       messenger,
@@ -149,6 +153,7 @@ class _AddTaskDialogState extends State<AddTaskDialog> {
 
   void _fillFromPast(Task past) {
     setState(() {
+      _sourceTask = past;
       _labelController.value = TextEditingValue(
         text: past.label,
         selection: TextSelection.collapsed(offset: past.label.length),
