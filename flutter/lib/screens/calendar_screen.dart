@@ -33,7 +33,14 @@ IconData _spanIcon(_CalSpan span) => switch (span) {
 class CalendarScreen extends StatefulWidget {
   final ValueChanged<Task>? onEditTask;
 
-  const CalendarScreen({super.key, this.onEditTask});
+  /// Bumped whenever the Calendar tab is selected so the view returns to today.
+  final int resetTick;
+
+  const CalendarScreen({
+    super.key,
+    this.onEditTask,
+    this.resetTick = 0,
+  });
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -57,9 +64,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   @override
+  void didUpdateWidget(CalendarScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.resetTick != oldWidget.resetTick) {
+      _resetToToday();
+    }
+  }
+
+  @override
   void dispose() {
     _pager.dispose();
     super.dispose();
+  }
+
+  void _resetToToday() {
+    final target = _today;
+    setState(() => _focus = target);
+    if (!_pager.hasClients) return;
+    final page = _pageForDate(target);
+    final current = _pager.page?.round() ?? _pageCenter;
+    if (page != current) {
+      _pager.jumpToPage(page);
+    }
   }
 
   DateTime _periodAnchor(DateTime d) {
@@ -495,7 +521,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        HourRail(hourHeight: 44),
+                        HourRail(hourHeight: 44, tasks: items),
                         Expanded(
                           child: DayTimeline(
                             tasks: items,
@@ -597,7 +623,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    HourRail(hourHeight: 28, compact: true),
+                    HourRail(
+                      hourHeight: 28,
+                      tasks: [for (final list in perDay) ...list],
+                    ),
                     for (var i = 0; i < days.length; i++)
                       Expanded(
                         child: DecoratedBox(
@@ -672,29 +701,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 child: LayoutBuilder(
                   builder: (context, box) {
                     final size = box.biggest.shortestSide;
-                    return Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (today)
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primaryContainer
-                                  .withOpacity(0.55),
-                            ),
-                            child: const SizedBox.expand(),
-                          ),
-                        _polar(items, size: size, day: cell),
-                        Text(
-                          '$dayNum',
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                fontSize: size * 0.18,
-                              ),
-                        ),
-                      ],
+                    return Center(
+                      child: _MonthDayCell(
+                        dayNum: dayNum,
+                        size: size,
+                        today: today,
+                        polar: _polar(items, size: size, day: cell),
+                      ),
                     );
                   },
                 ),
@@ -753,6 +766,71 @@ class _CalendarScreenState extends State<CalendarScreen> {
               );
             },
           );
+  }
+}
+
+class _MonthDayCell extends StatelessWidget {
+  final int dayNum;
+  final double size;
+  final bool today;
+  final Widget polar;
+
+  const _MonthDayCell({
+    required this.dayNum,
+    required this.size,
+    required this.today,
+    required this.polar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = Text(
+      '$dayNum',
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            fontWeight: today ? FontWeight.w800 : FontWeight.w700,
+            fontSize: size * 0.18,
+            height: 1,
+            color: today ? scheme.onPrimary : scheme.onSurface,
+          ),
+    );
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          polar,
+          if (today)
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: scheme.primary, width: 2),
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          if (today)
+            IgnorePointer(
+              child: SizedBox(
+                width: size * 0.34,
+                height: size * 0.34,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.primary,
+                  ),
+                  child: Center(child: label),
+                ),
+              ),
+            )
+          else
+            label,
+        ],
+      ),
+    );
   }
 }
 

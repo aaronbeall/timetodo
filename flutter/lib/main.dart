@@ -95,6 +95,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   int _tasksFocusTick = 0;
+  int _calendarResetTick = 0;
   String? _revealTaskId;
   int _revealTick = 0;
 
@@ -121,6 +122,8 @@ class _MainScreenState extends State<MainScreen> {
     if (index == _currentIndex) {
       if (index == 1) {
         setState(() => _tasksFocusTick++);
+      } else if (index == 2) {
+        setState(() => _calendarResetTick++);
       }
       return;
     }
@@ -129,6 +132,8 @@ class _MainScreenState extends State<MainScreen> {
       if (!fromNotifier) homeTabIndex.value = index;
       if (index == 1) {
         _tasksFocusTick++;
+      } else if (index == 2) {
+        _calendarResetTick++;
       }
     });
   }
@@ -162,7 +167,10 @@ class _MainScreenState extends State<MainScreen> {
               revealTaskId: _revealTaskId,
               revealTick: _revealTick,
             ),
-            CalendarScreen(onEditTask: _openTaskEditor),
+            CalendarScreen(
+              onEditTask: _openTaskEditor,
+              resetTick: _calendarResetTick,
+            ),
             const ReportsScreen(),
           ],
         ),

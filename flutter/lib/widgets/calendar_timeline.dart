@@ -83,11 +83,59 @@ List<TimelineBlock> layoutTimeline(List<ScheduledTask> tasks) {
   ];
 }
 
-String formatHourLabel(int hour) {
-  final h = hour % 24;
+String formatHourLabel(int hour) => formatAxisTime(hour * 60);
+
+String formatAxisTime(int minutes) {
+  if (minutes <= 0 || minutes >= kMinutesPerDay) {
+    return '12 AM';
+  }
+  final h = (minutes ~/ 60) % 24;
+  final m = minutes % 60;
   final display = h == 0 ? 12 : (h > 12 ? h - 12 : h);
   final period = h >= 12 ? 'PM' : 'AM';
-  return '$display $period';
+  if (m == 0) return '$display $period';
+  return '$display:${m.toString().padLeft(2, '0')} $period';
+}
+
+List<int> axisMarkMinutes(List<ScheduledTask> tasks) {
+  final marks = <int>{};
+  for (final block in layoutTimeline(tasks)) {
+    marks.add(block.startMin);
+    if (block.startMin == 0) marks.add(0);
+    if (block.endMin >= kMinutesPerDay) {
+      marks.add(kMinutesPerDay);
+    } else {
+      marks.add(block.endMin);
+    }
+  }
+  return marks.toList()..sort();
+}
+
+List<int> spaceAxisMarks(
+  List<int> sorted, {
+  required double hourHeight,
+  double minGap = 20,
+}) {
+  if (sorted.isEmpty) return sorted;
+  bool pinned(int m) => m == 0 || m == kMinutesPerDay;
+  final kept = <int>[];
+  for (final m in sorted) {
+    if (pinned(m)) {
+      if (kept.isNotEmpty && !pinned(kept.last)) {
+        final px = ((m - kept.last) / 60) * hourHeight;
+        if (px < minGap) kept.removeLast();
+      }
+      kept.add(m);
+      continue;
+    }
+    if (kept.isEmpty) {
+      kept.add(m);
+      continue;
+    }
+    final px = ((m - kept.last) / 60) * hourHeight;
+    if (px >= minGap) kept.add(m);
+  }
+  return kept;
 }
 
 class CalendarEventBlock extends StatelessWidget {
@@ -113,33 +161,38 @@ class CalendarEventBlock extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: fill,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(4),
-      ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 3 : 6,
-          vertical: compact ? 1 : 3,
-        ),
-        child: Align(
-          alignment: Alignment.topLeft,
-          child: Text(
-            task.label,
-            maxLines: compact ? 2 : 4,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: ink.withOpacity(struck ? 0.55 : 1),
-              fontWeight: FontWeight.w600,
-              fontSize: compact ? 9 : 11,
-              height: 1.15,
-              decoration: struck ? TextDecoration.lineThrough : null,
-              decorationColor: ink.withOpacity(0.45),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: fill,
+            border: Border(
+              left: BorderSide(color: task.color, width: compact ? 3 : 4),
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 3 : 6,
+              vertical: compact ? 1 : 3,
+            ),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Text(
+                task.label,
+                maxLines: compact ? 2 : 4,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: ink.withOpacity(struck ? 0.55 : 1),
+                  fontWeight: FontWeight.w600,
+                  fontSize: compact ? 9 : 11,
+                  height: 1.15,
+                  decoration: struck ? TextDecoration.lineThrough : null,
+                  decorationColor: ink.withOpacity(0.45),
+                ),
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -183,9 +236,7 @@ class DayTimeline extends StatelessWidget {
                   right: 0,
                   child: Divider(
                     height: 1,
-                    color: theme.dividerColor.withValues(
-                      alpha: h % 6 == 0 ? 0.18 : 0.07,
-                    ),
+                    color: theme.dividerColor.withValues(alpha: 0.1),
                   ),
                 ),
               for (final block in blocks)
@@ -311,7 +362,7 @@ class AxisCaption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.tertiary;
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
     if (!twoLine) {
       return Text(
         text,
@@ -356,29 +407,36 @@ class AxisCaption extends StatelessWidget {
 
 class HourRail extends StatelessWidget {
   final double hourHeight;
-  final bool compact;
+  final List<ScheduledTask> tasks;
 
   const HourRail({
     super.key,
     required this.hourHeight,
-    this.compact = false,
+    this.tasks = const [],
   });
 
   @override
   Widget build(BuildContext context) {
+    final marks = spaceAxisMarks(
+      axisMarkMinutes(tasks),
+      hourHeight: hourHeight,
+    );
     return SizedBox(
       width: kHourRailWidth,
       height: hourHeight * 24,
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          for (var h = 0; h < 24; h++)
+          for (final minutes in marks)
             Positioned(
-              top: h * hourHeight - (compact ? 8 : 6),
+              top: minutes >= kMinutesPerDay
+                  ? hourHeight * 24 - 20
+                  : (minutes / 60) * hourHeight - 10,
               left: 0,
               right: 4,
               child: AxisCaption(
-                text: formatHourLabel(h),
-                twoLine: compact,
+                text: formatAxisTime(minutes),
+                twoLine: true,
               ),
             ),
         ],
