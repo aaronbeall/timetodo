@@ -281,10 +281,23 @@ class TaskEditorState extends State<TaskEditor> {
                 ),
               ),
               const Spacer(),
-              TextButton.icon(
+              FilledButton.tonalIcon(
                 onPressed: dirty ? _revert : null,
                 icon: const Icon(Icons.undo_rounded),
-                label: const Text('Revert'),
+                label: Text(
+                  'Revert',
+                  style: TextStyle(
+                    fontWeight: dirty ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  foregroundColor: dirty
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                  backgroundColor: dirty
+                      ? Theme.of(context).colorScheme.primaryContainer
+                      : null,
+                ),
               ),
             ],
           ),

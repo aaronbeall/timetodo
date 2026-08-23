@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/screens/today_screen.dart';
 import 'package:timetodo/screens/tasks_screen.dart';
+import 'package:timetodo/models/task.dart';
 
 void main() {
   runApp(const TimeToDoApp());
@@ -66,6 +67,16 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   int _tasksFocusTick = 0;
+  String? _revealTaskId;
+  int _revealTick = 0;
+
+  void _openTaskEditor(Task task) {
+    setState(() {
+      _currentIndex = 1;
+      _revealTaskId = task.id;
+      _revealTick++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,10 +84,12 @@ class _MainScreenState extends State<MainScreen> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          const TodayScreen(),
+          TodayScreen(onEditTask: _openTaskEditor),
           TasksScreen(
             focusTick: _tasksFocusTick,
             isActive: _currentIndex == 1,
+            revealTaskId: _revealTaskId,
+            revealTick: _revealTick,
           ),
         ],
       ),

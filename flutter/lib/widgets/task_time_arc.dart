@@ -62,9 +62,10 @@ class _TaskTimeArcPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = math.min(size.width, size.height) / 2;
-    final ringWidth = math.max(2.5, radius * 0.18);
+    final ringWidth = math.max(3.5, radius * 0.34);
     final ringRadius = radius - ringWidth / 2;
-    final dotRadius = ringRadius - ringWidth - 1.5;
+    final innerHole = math.max(0.0, ringRadius - ringWidth / 2);
+    final dotRadius = innerHole * 0.42;
 
     final track = Paint()
       ..color = trackColor
@@ -90,7 +91,9 @@ class _TaskTimeArcPainter extends CustomPainter {
       );
     }
 
-    canvas.drawCircle(center, math.max(3, dotRadius), Paint()..color = color);
+    if (dotRadius > 1) {
+      canvas.drawCircle(center, dotRadius, Paint()..color = color);
+    }
   }
 
   @override

@@ -13,11 +13,15 @@ class TasksScreen extends StatefulWidget {
     super.key,
     this.focusTick = 0,
     this.isActive = true,
+    this.revealTaskId,
+    this.revealTick = 0,
   });
 
   /// Bumped whenever the Tasks tab is selected so the list jumps to today.
   final int focusTick;
   final bool isActive;
+  final String? revealTaskId;
+  final int revealTick;
 
   @override
   State<TasksScreen> createState() => _TasksScreenState();
@@ -28,16 +32,53 @@ class _TasksScreenState extends State<TasksScreen> {
   String? _expandedTaskId;
   Task? _headingDraft;
   final _editorKey = GlobalKey<TaskEditorState>();
+  final _listController = ScrollController();
+  final _rowKeys = <String, GlobalKey>{};
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(TasksScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.focusTick != oldWidget.focusTick) {
       _editorKey.currentState?.commit();
-      _selectedDate = DateTime.now();
-      _expandedTaskId = null;
-      _headingDraft = null;
+      setState(() {
+        _selectedDate = DateTime.now();
+        _expandedTaskId = null;
+        _headingDraft = null;
+      });
     }
+    if (widget.revealTick != oldWidget.revealTick &&
+        widget.revealTaskId != null) {
+      _editorKey.currentState?.commit();
+      setState(() {
+        _selectedDate = DateTime.now();
+        _expandedTaskId = widget.revealTaskId;
+        _headingDraft = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToExpanded();
+        });
+      });
+    }
+  }
+
+  void _scrollToExpanded() {
+    final id = _expandedTaskId;
+    if (id == null) return;
+    final ctx = _rowKeys[id]?.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      alignment: 0.12,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _previousDay() {
@@ -146,6 +187,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 }
 
                 return ListView.builder(
+                  controller: _listController,
                   padding: const EdgeInsets.all(16),
                   itemCount: tasks.length,
                   itemBuilder: (context, index) {
@@ -155,8 +197,11 @@ class _TasksScreenState extends State<TasksScreen> {
                         isExpanded && _headingDraft?.id == task.id
                             ? _headingDraft!
                             : task;
+                    final rowKey =
+                        _rowKeys.putIfAbsent(task.id, GlobalKey.new);
 
                     return Card(
+                      key: rowKey,
                       margin: const EdgeInsets.only(bottom: 12),
                       child: Column(
                         children: [

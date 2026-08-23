@@ -12,9 +12,12 @@ import 'package:timetodo/widgets/task_list_item.dart';
 import 'package:timetodo/widgets/add_task_dialog.dart';
 import 'package:timetodo/widgets/change_toast.dart';
 import 'package:timetodo/widgets/flip_host.dart';
+import 'package:timetodo/widgets/task_summary_sheet.dart';
 
 class TodayScreen extends StatefulWidget {
-  const TodayScreen({super.key});
+  final ValueChanged<Task>? onEditTask;
+
+  const TodayScreen({super.key, this.onEditTask});
 
   @override
   State<TodayScreen> createState() => _TodayScreenState();
@@ -252,6 +255,15 @@ class _TodayScreenState extends State<TodayScreen> {
     return slack + travel * (1 - t);
   }
 
+  void _showSummary(Task task) {
+    showTaskSummarySheet(
+      context,
+      task: task,
+      now: _currentTime,
+      onEdit: () => widget.onEditTask?.call(task),
+    );
+  }
+
   int _startMinutes(Task task) {
     if (task.startTime == null) return 24 * 60;
     return task.startTime!.hour * 60 + task.startTime!.minute;
@@ -362,6 +374,7 @@ class _TodayScreenState extends State<TodayScreen> {
                 task: task,
                 currentTime: _currentTime,
                 showShadow: shadow,
+                onTap: () => _showSummary(task),
                 onSnooze: () {
                   final undo = taskProvider.snoozeTask(task.id);
                   showChangeToast(
@@ -531,10 +544,6 @@ class _TodayScreenState extends State<TodayScreen> {
                           final remaining = (spacerHeight - offset)
                               .clamp(0.0, spacerHeight);
                           final size = remaining.clamp(_minClock, maxClock);
-                          final clockT = maxClock == _minClock
-                              ? 1.0
-                              : ((maxClock - size) / (maxClock - _minClock))
-                                  .clamp(0.0, 1.0);
                           final docked = remaining <= _minClock;
                           final frameT = docked ? 1.0 : 0.0;
                           final bezel = frameInset * 2 * frameT;
@@ -550,14 +559,7 @@ class _TodayScreenState extends State<TodayScreen> {
                               (size / maxClock).clamp(0.42, 1.0);
                           final theme = Theme.of(context);
 
-                          return Positioned(
-                            left: left,
-                            top: top,
-                            child: IgnorePointer(
-                              ignoring: clockT < 0.82,
-                              child: GestureDetector(
-                                onTap: _scrollToTop,
-                                child: DecoratedBox(
+                          final clockFace = DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: Color.lerp(
                                       Colors.transparent,
@@ -598,20 +600,34 @@ class _TodayScreenState extends State<TodayScreen> {
                                               currentTime: _currentTime,
                                               tasks: todayTasks,
                                               size: size,
+                                              onTaskTap: docked
+                                                  ? null
+                                                  : _showSummary,
                                             ),
-                                            Transform.scale(
-                                              scale: timeScale,
-                                              child:
-                                                  _buildClockCenter(context),
+                                            IgnorePointer(
+                                              child: Transform.scale(
+                                                scale: timeScale,
+                                                child: _buildClockCenter(
+                                                  context,
+                                                ),
+                                              ),
                                             ),
                                           ],
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ),
-                            ),
+                                );
+
+                          return Positioned(
+                            left: left,
+                            top: top,
+                            child: docked
+                                ? GestureDetector(
+                                    onTap: _scrollToTop,
+                                    child: clockFace,
+                                  )
+                                : clockFace,
                           );
                         },
                       ),

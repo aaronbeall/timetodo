@@ -10,6 +10,7 @@ class TaskListItem extends StatelessWidget {
   final VoidCallback? onComplete;
   final VoidCallback? onCancel;
   final VoidCallback? onDoNow;
+  final VoidCallback? onTap;
   final bool showShadow;
 
   /// Full row (action buttons) including the gap below the card.
@@ -30,6 +31,7 @@ class TaskListItem extends StatelessWidget {
     this.onComplete,
     this.onCancel,
     this.onDoNow,
+    this.onTap,
     this.showShadow = false,
   });
 
@@ -170,7 +172,12 @@ class TaskListItem extends StatelessWidget {
       alignment: Alignment.topCenter,
       child: Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: DecoratedBox(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           boxShadow: showShadow
@@ -316,6 +323,8 @@ class TaskListItem extends StatelessWidget {
             ),
           ],
         ),
+      ),
+      ),
       ),
       ),
       ),

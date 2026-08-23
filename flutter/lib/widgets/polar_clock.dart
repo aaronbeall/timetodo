@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:timetodo/models/task.dart';
 
 class _TaskRange {
@@ -43,12 +45,14 @@ class PolarClock extends StatefulWidget {
   final TimeOfDay currentTime;
   final List<Task> tasks;
   final double size;
+  final ValueChanged<Task>? onTaskTap;
 
   const PolarClock({
     super.key,
     required this.currentTime,
     required this.tasks,
     this.size = 300,
+    this.onTaskTap,
   });
 
   @override
@@ -126,13 +130,29 @@ class _PolarClockState extends State<PolarClock>
       child: AnimatedBuilder(
         animation: _curve,
         builder: (context, _) {
-          return CustomPaint(
-            painter: PolarClockPainter(
-              currentTime: widget.currentTime,
-              arcs: _displayed(_curve.value).values.toList(),
-              trackColor: Theme.of(context).colorScheme.outlineVariant,
-              nowColor: Theme.of(context).colorScheme.onSurface,
-              nowOnColor: Theme.of(context).colorScheme.surface,
+          final arcs = _displayed(_curve.value).values.toList();
+          return _ArcHitTarget(
+            arcs: arcs,
+            onTapId: widget.onTaskTap == null
+                ? null
+                : (id) {
+                    Task? task;
+                    for (final t in widget.tasks) {
+                      if (t.id == id) {
+                        task = t;
+                        break;
+                      }
+                    }
+                    if (task != null) widget.onTaskTap!(task);
+                  },
+            child: CustomPaint(
+              painter: PolarClockPainter(
+                currentTime: widget.currentTime,
+                arcs: arcs,
+                trackColor: Theme.of(context).colorScheme.outlineVariant,
+                nowColor: Theme.of(context).colorScheme.onSurface,
+                nowOnColor: Theme.of(context).colorScheme.surface,
+              ),
             ),
           );
         },
@@ -303,6 +323,70 @@ bool _rangesOverlap(_TaskRange a, _TaskRange b) {
   return false;
 }
 
+class _ArcHitTarget extends SingleChildRenderObjectWidget {
+  final List<_ArcGeom> arcs;
+  final ValueChanged<String>? onTapId;
+
+  const _ArcHitTarget({
+    required this.arcs,
+    required this.onTapId,
+    required super.child,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderArcHit(arcs: arcs, onTapId: onTapId);
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderArcHit renderObject,
+  ) {
+    renderObject
+      ..arcs = arcs
+      ..onTapId = onTapId;
+  }
+}
+
+class _RenderArcHit extends RenderProxyBox {
+  _RenderArcHit({
+    required List<_ArcGeom> arcs,
+    required this.onTapId,
+  }) : _arcs = arcs;
+
+  List<_ArcGeom> _arcs;
+  ValueChanged<String>? onTapId;
+
+  set arcs(List<_ArcGeom> value) {
+    _arcs = value;
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (onTapId == null || size == Size.zero || !size.contains(position)) {
+      return false;
+    }
+    if (!_containsArc(position)) return false;
+    result.add(BoxHitTestEntry(this, position));
+    return true;
+  }
+
+  @override
+  void handleEvent(PointerEvent event, covariant HitTestEntry entry) {
+    if (event is PointerUpEvent && onTapId != null) {
+      final id = _idAt(event.localPosition);
+      if (id != null) onTapId!(id);
+    }
+  }
+
+  bool _containsArc(Offset position) => _idAt(position) != null;
+
+  String? _idAt(Offset position) {
+    return PolarClockPainter.idAt(position, size, _arcs);
+  }
+}
+
 class PolarClockPainter extends CustomPainter {
   static const _minutesPerDay = 24 * 60;
 
@@ -321,8 +405,52 @@ class PolarClockPainter extends CustomPainter {
   });
 
   /// Midnight at 9 o'clock (left), sweeping clockwise.
-  double _angleForMinutes(num minutes) {
+  static double angleForMinutes(num minutes) {
     return math.pi + 2 * math.pi * (minutes / _minutesPerDay);
+  }
+
+  double _angleForMinutes(num minutes) => angleForMinutes(minutes);
+
+  static String? idAt(Offset position, Size size, List<_ArcGeom> arcs) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = math.min(size.width, size.height) / 2;
+    final holeRadius = maxRadius * 0.22;
+    final hourTrackWidth = math.max(6.0, maxRadius * 0.035);
+    final hourTrackRadius = holeRadius + hourTrackWidth / 2;
+    final tracksInner = hourTrackRadius + hourTrackWidth / 2 + 3;
+    final tracksOuter = maxRadius - 2;
+    if (tracksOuter <= tracksInner) return null;
+
+    final delta = position - center;
+    final dist = delta.distance;
+    var angle = math.atan2(delta.dy, delta.dx);
+    var minutes = ((angle - math.pi) / (2 * math.pi)) * _minutesPerDay;
+    minutes %= _minutesPerDay;
+    if (minutes < 0) minutes += _minutesPerDay;
+
+    final visible = arcs
+        .where((a) => a.opacity > 0.015 && a.duration > 0.4)
+        .toList()
+      ..sort((a, b) => b.lane.compareTo(a.lane));
+
+    for (final arc in visible) {
+      final n = math.max(1.0, arc.laneCount);
+      final gap = n > 1
+          ? math.min(2.5, (tracksOuter - tracksInner) * 0.015)
+          : 0.0;
+      final trackWidth =
+          ((tracksOuter - tracksInner) - gap * (n - 1)) / n;
+      final innerEdge = tracksInner + arc.lane * (trackWidth + gap);
+      final outerEdge = innerEdge + trackWidth;
+      if (dist < innerEdge || dist > outerEdge) continue;
+
+      var t = minutes;
+      if (t < arc.start) t += _minutesPerDay;
+      if (t >= arc.start && t < arc.start + arc.duration) {
+        return arc.id;
+      }
+    }
+    return null;
   }
 
   @override
