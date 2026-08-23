@@ -34,6 +34,7 @@ class _TasksScreenState extends State<TasksScreen> {
   String? _expandedTaskId;
   Task? _headingDraft;
   _TasksFilter _filter = _TasksFilter.active;
+  final _repeatFilters = <String>{};
   final _editorKey = GlobalKey<TaskEditorState>();
   final _listController = ScrollController();
   final _rowKeys = <String, GlobalKey>{};
@@ -97,11 +98,33 @@ class _TasksScreenState extends State<TasksScreen> {
         title: const Text('Tasks'),
         elevation: 0,
       ),
-      body: Column(
-        children: [
+      body: Consumer<TaskProvider>(
+        builder: (context, taskProvider, child) {
+          final List<Task> source;
+          if (_filter == _TasksFilter.archived) {
+            source = [...taskProvider.archivedTasks]
+              ..sort((a, b) =>
+                  a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+          } else {
+            source = [...taskProvider.activeTasks]
+              ..sort((a, b) =>
+                  a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+          }
+          final tags = _uniqueFilterTags(source);
+          final activeTags =
+              _repeatFilters.where(tags.contains).toSet();
+          final tasks = activeTags.isEmpty
+              ? source
+              : source.where((task) => _matchesFilter(task, activeTags)).toList();
+
+          return Column(
+            children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: SegmentedButton<_TasksFilter>(
+            child: Row(
+              children: [
+                Expanded(
+                  child: SegmentedButton<_TasksFilter>(
               segments: const [
                 ButtonSegment(
                   value: _TasksFilter.active,
@@ -121,26 +144,70 @@ class _TasksScreenState extends State<TasksScreen> {
                   _filter = value.first;
                   _expandedTaskId = null;
                   _headingDraft = null;
+                  _repeatFilters.clear();
                 });
               },
+                  ),
+                ),
+                const SizedBox(width: 4),
+                MenuAnchor(
+                  alignmentOffset: const Offset(0, 8),
+                  builder: (context, controller, _) {
+                    return IconButton(
+                      tooltip: 'Filter by schedule',
+                      isSelected: activeTags.isNotEmpty,
+                      onPressed: tags.isEmpty
+                          ? null
+                          : () {
+                              if (controller.isOpen) {
+                                controller.close();
+                              } else {
+                                controller.open();
+                              }
+                            },
+                      icon: Badge(
+                        isLabelVisible: activeTags.isNotEmpty,
+                        smallSize: 8,
+                        child: const Icon(Icons.filter_list),
+                      ),
+                    );
+                  },
+                  menuChildren: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 280),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final tag in tags)
+                              FilterChip(
+                                label: Text(tag),
+                                selected: _repeatFilters.contains(tag),
+                                onSelected: (selected) {
+                                  setState(() {
+                                    if (selected) {
+                                      _repeatFilters.add(tag);
+                                    } else {
+                                      _repeatFilters.remove(tag);
+                                    }
+                                  });
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
 
-          // Task List
           Expanded(
-            child: Consumer<TaskProvider>(
-              builder: (context, taskProvider, child) {
-                final List<Task> tasks;
-                if (_filter == _TasksFilter.archived) {
-                  tasks = [...taskProvider.archivedTasks]
-                    ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
-                } else {
-                  tasks = [...taskProvider.activeTasks]
-                    ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
-                }
-
-                if (tasks.isEmpty) {
-                  return Center(
+            child: tasks.isEmpty
+                ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -154,9 +221,11 @@ class _TasksScreenState extends State<TasksScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          _filter == _TasksFilter.archived
-                              ? 'No archived tasks'
-                              : 'No tasks yet',
+                          source.isEmpty
+                              ? (_filter == _TasksFilter.archived
+                                  ? 'No archived tasks'
+                                  : 'No tasks yet')
+                              : 'No tasks match this filter',
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                 color: Theme.of(context)
                                     .colorScheme
@@ -166,10 +235,8 @@ class _TasksScreenState extends State<TasksScreen> {
                         ),
                       ],
                     ),
-                  );
-                }
-
-                return ListView.builder(
+                  )
+                : ListView.builder(
                   controller: _listController,
                   padding: const EdgeInsets.all(16),
                   itemCount: tasks.length,
@@ -298,17 +365,35 @@ class _TasksScreenState extends State<TasksScreen> {
                       ),
                     );
                   },
-                );
-              },
-            ),
-          ),
-        ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _addNewTask(context),
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  List<String> _uniqueFilterTags(List<Task> tasks) {
+    final tags = <String>{};
+    for (final task in tasks) {
+      if (task.isAllDay) tags.add('All Day');
+      final repeat = _getRepeatDescription(task);
+      tags.add(repeat.isEmpty ? 'One time' : repeat);
+    }
+    final list = tags.toList()..sort();
+    return list;
+  }
+
+  bool _matchesFilter(Task task, Set<String> tags) {
+    if (tags.contains('All Day') && task.isAllDay) return true;
+    final repeat = _getRepeatDescription(task);
+    final label = repeat.isEmpty ? 'One time' : repeat;
+    return tags.contains(label);
   }
 
   String _timeSummary(Task task) {
