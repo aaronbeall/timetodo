@@ -256,6 +256,7 @@ class TaskEditorState extends State<TaskEditor> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
             TaskDetailsForm(

@@ -36,9 +36,18 @@ class _TasksScreenState extends State<TasksScreen> {
   Task? _headingDraft;
   _TasksFilter _filter = _TasksFilter.active;
   final _repeatFilters = <String>{};
-  final _editorKey = GlobalKey<TaskEditorState>();
+  GlobalKey<TaskEditorState> _editorKey = GlobalKey<TaskEditorState>();
   final _listController = ScrollController();
-  final _expandedRowKey = GlobalKey();
+  GlobalKey _expandedRowKey = GlobalKey();
+
+  void _expandTask(String? taskId) {
+    if (taskId != null && taskId != _expandedTaskId) {
+      _editorKey = GlobalKey<TaskEditorState>();
+      _expandedRowKey = GlobalKey();
+    }
+    _expandedTaskId = taskId;
+    _headingDraft = null;
+  }
 
   @override
   void dispose() {
@@ -51,18 +60,12 @@ class _TasksScreenState extends State<TasksScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.focusTick != oldWidget.focusTick) {
       _editorKey.currentState?.commit();
-      setState(() {
-        _expandedTaskId = null;
-        _headingDraft = null;
-      });
+      setState(() => _expandTask(null));
     }
     if (widget.revealTick != oldWidget.revealTick &&
         widget.revealTaskId != null) {
       _editorKey.currentState?.commit();
-      setState(() {
-        _expandedTaskId = widget.revealTaskId;
-        _headingDraft = null;
-      });
+      setState(() => _expandTask(widget.revealTaskId));
       WidgetsBinding.instance.addPostFrameCallback((_) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollToExpanded();
@@ -86,8 +89,7 @@ class _TasksScreenState extends State<TasksScreen> {
   void _toggleTask(String taskId) {
     _editorKey.currentState?.commit();
     setState(() {
-      _expandedTaskId = _expandedTaskId == taskId ? null : taskId;
-      _headingDraft = null;
+      _expandTask(_expandedTaskId == taskId ? null : taskId);
     });
   }
 
@@ -96,10 +98,7 @@ class _TasksScreenState extends State<TasksScreen> {
   void _afterRowSettles(VoidCallback action) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(() {
-        _expandedTaskId = null;
-        _headingDraft = null;
-      });
+      setState(() => _expandTask(null));
       action();
     });
   }
@@ -158,8 +157,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 _editorKey.currentState?.commit();
                 setState(() {
                   _filter = value.first;
-                  _expandedTaskId = null;
-                  _headingDraft = null;
+                  _expandTask(null);
                   _repeatFilters.clear();
                 });
               },
@@ -266,6 +264,7 @@ class _TasksScreenState extends State<TasksScreen> {
                     Widget row = Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           // Collapsed view
                           ListTile(
@@ -364,10 +363,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                 setState(() => _headingDraft = preview);
                               },
                               onMinimize: () {
-                                setState(() {
-                                  _expandedTaskId = null;
-                                  _headingDraft = null;
-                                });
+                                setState(() => _expandTask(null));
                               },
                               onArchive: () {
                                 final label = task.label;
@@ -467,7 +463,7 @@ class _TasksScreenState extends State<TasksScreen> {
       ),
     );
     if (!mounted || created == null) return;
-    setState(() => _expandedTaskId = created.id);
+    setState(() => _expandTask(created.id));
   }
 }
 
