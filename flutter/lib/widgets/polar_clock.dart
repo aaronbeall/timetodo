@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 import 'package:timetodo/models/task.dart';
 
@@ -14,7 +15,31 @@ class _TaskRange {
   });
 }
 
-class PolarClock extends StatelessWidget {
+class _ArcGeom {
+  final String id;
+  final double start;
+  final double duration;
+  final Color color;
+  final double opacity;
+  final double lane;
+  final double laneCount;
+
+  const _ArcGeom({
+    required this.id,
+    required this.start,
+    required this.duration,
+    required this.color,
+    required this.opacity,
+    required this.lane,
+    required this.laneCount,
+  });
+
+  String get signature =>
+      '$id:${start.toStringAsFixed(1)}:${duration.toStringAsFixed(1)}:'
+      '${lane.toStringAsFixed(2)}:${color.value}:${opacity.toStringAsFixed(2)}';
+}
+
+class PolarClock extends StatefulWidget {
   final TimeOfDay currentTime;
   final List<Task> tasks;
   final double size;
@@ -27,35 +52,269 @@ class PolarClock extends StatelessWidget {
   });
 
   @override
+  State<PolarClock> createState() => _PolarClockState();
+}
+
+class _PolarClockState extends State<PolarClock>
+    with SingleTickerProviderStateMixin {
+  static const _animDuration = Duration(milliseconds: 480);
+
+  late final AnimationController _controller;
+  late final CurvedAnimation _curve;
+  Map<String, _ArcGeom> _from = {};
+  Map<String, _ArcGeom> _to = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _to = _snapshot(widget.tasks, widget.currentTime);
+    _from = Map.of(_to);
+    _controller = AnimationController(vsync: this, duration: _animDuration);
+    _curve = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOutCubic,
+    );
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _from = Map.of(_to);
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncArcs(reduce: MediaQuery.disableAnimationsOf(context));
+  }
+
+  @override
+  void didUpdateWidget(PolarClock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncArcs(reduce: MediaQuery.disableAnimationsOf(context));
+  }
+
+  void _syncArcs({required bool reduce}) {
+    final next = _snapshot(widget.tasks, widget.currentTime);
+    if (_signature(next) == _signature(_to)) return;
+    _from = _displayed(_curve.value);
+    _to = next;
+    if (reduce) {
+      _from = Map.of(_to);
+      _controller.value = 1;
+    } else {
+      _controller.forward(from: 0);
+    }
+  }
+
+  String _signature(Map<String, _ArcGeom> arcs) {
+    final ids = arcs.keys.toList()..sort();
+    return ids.map((id) => arcs[id]!.signature).join('|');
+  }
+
+  @override
+  void dispose() {
+    _curve.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: PolarClockPainter(
-          currentTime: currentTime,
-          tasks: tasks,
-          trackColor: Theme.of(context).colorScheme.outlineVariant,
-          nowColor: Theme.of(context).colorScheme.onSurface,
-          nowOnColor: Theme.of(context).colorScheme.surface,
-        ),
+      width: widget.size,
+      height: widget.size,
+      child: AnimatedBuilder(
+        animation: _curve,
+        builder: (context, _) {
+          return CustomPaint(
+            painter: PolarClockPainter(
+              currentTime: widget.currentTime,
+              arcs: _displayed(_curve.value).values.toList(),
+              trackColor: Theme.of(context).colorScheme.outlineVariant,
+              nowColor: Theme.of(context).colorScheme.onSurface,
+              nowOnColor: Theme.of(context).colorScheme.surface,
+            ),
+          );
+        },
       ),
     );
   }
+
+  Map<String, _ArcGeom> _displayed(double t) {
+    final ids = {..._from.keys, ..._to.keys};
+    final result = <String, _ArcGeom>{};
+    for (final id in ids) {
+      final a = _from[id];
+      final b = _to[id];
+      if (a == null && b != null) {
+        result[id] = _lerpArc(_spawn(b), b, t);
+      } else if (a != null && b == null) {
+        result[id] = _lerpArc(a, _vanish(a), t);
+      } else if (a != null && b != null) {
+        result[id] = _lerpArc(a, b, t);
+      }
+    }
+    return result;
+  }
+
+  _ArcGeom _spawn(_ArcGeom target) => _ArcGeom(
+        id: target.id,
+        start: target.start,
+        duration: 0,
+        color: target.color,
+        opacity: 0,
+        lane: target.lane,
+        laneCount: target.laneCount,
+      );
+
+  _ArcGeom _vanish(_ArcGeom source) => _ArcGeom(
+        id: source.id,
+        start: source.start,
+        duration: source.duration,
+        color: source.color,
+        opacity: 0,
+        lane: source.lane,
+        laneCount: source.laneCount,
+      );
+
+  _ArcGeom _lerpArc(_ArcGeom a, _ArcGeom b, double t) {
+    return _ArcGeom(
+      id: b.id,
+      start: _lerpMinutes(a.start, b.start, t),
+      duration: lerpDouble(a.duration, b.duration, t)!,
+      color: Color.lerp(a.color, b.color, t)!,
+      opacity: lerpDouble(a.opacity, b.opacity, t)!,
+      lane: lerpDouble(a.lane, b.lane, t)!,
+      laneCount: lerpDouble(a.laneCount, b.laneCount, t)!,
+    );
+  }
+
+  double _lerpMinutes(double a, double b, double t) {
+    var delta = b - a;
+    const day = PolarClockPainter._minutesPerDay;
+    if (delta > day / 2) delta -= day;
+    if (delta < -day / 2) delta += day;
+    var value = a + delta * t;
+    value %= day;
+    if (value < 0) value += day;
+    return value;
+  }
+}
+
+Map<String, _ArcGeom> _snapshot(List<Task> tasks, TimeOfDay now) {
+  final timed = tasks
+      .where((t) =>
+          !t.isAllDay &&
+          !t.isCanceled &&
+          t.startTime != null &&
+          t.endTime != null)
+      .toList();
+  final lanes = _assignTasksToTracks(timed);
+  final laneCount = lanes.length.toDouble();
+  final map = <String, _ArcGeom>{};
+  for (final entry in lanes.entries) {
+    for (final task in entry.value) {
+      final start = task.startTime!.hour * 60 + task.startTime!.minute;
+      final end = task.endTime!.hour * 60 + task.endTime!.minute;
+      final duration =
+          start <= end ? end - start : PolarClockPainter._minutesPerDay - start + end;
+      map[task.id] = _ArcGeom(
+        id: task.id,
+        start: start.toDouble(),
+        duration: duration.toDouble(),
+        color: task.color,
+        opacity: task.isUpcoming(now) ? 0.95 : 0.38,
+        lane: entry.key.toDouble(),
+        laneCount: laneCount,
+      );
+    }
+  }
+  return map;
+}
+
+Map<int, List<Task>> _assignTasksToTracks(List<Task> tasks) {
+  final taskRanges = tasks.map((task) {
+    final start = task.startTime!.hour * 60 + task.startTime!.minute;
+    final end = task.endTime!.hour * 60 + task.endTime!.minute;
+    return _TaskRange(task: task, start: start, end: end);
+  }).toList()
+    ..sort((a, b) {
+      final durationA = _durationMinutes(a);
+      final durationB = _durationMinutes(b);
+      final byDuration = durationB.compareTo(durationA);
+      if (byDuration != 0) return byDuration;
+      return a.start.compareTo(b.start);
+    });
+
+  final Map<int, List<Task>> tracks = {};
+  final List<List<_TaskRange>> trackRanges = [];
+
+  for (final taskRange in taskRanges) {
+    var trackIndex = -1;
+    for (var i = 0; i < trackRanges.length; i++) {
+      final overlaps = trackRanges[i].any(
+        (existing) => _rangesOverlap(taskRange, existing),
+      );
+      if (!overlaps) {
+        trackIndex = i;
+        break;
+      }
+    }
+
+    if (trackIndex == -1) {
+      trackIndex = trackRanges.length;
+      trackRanges.add([]);
+      tracks[trackIndex] = [];
+    }
+
+    trackRanges[trackIndex].add(taskRange);
+    tracks[trackIndex]!.add(taskRange.task);
+  }
+
+  return tracks;
+}
+
+int _durationMinutes(_TaskRange range) {
+  if (range.start <= range.end) {
+    return range.end - range.start;
+  }
+  return PolarClockPainter._minutesPerDay - range.start + range.end;
+}
+
+List<(int, int)> _segments(_TaskRange range) {
+  if (range.start == range.end) {
+    return [(range.start, range.end)];
+  }
+  if (range.start < range.end) {
+    return [(range.start, range.end)];
+  }
+  return [
+    (range.start, PolarClockPainter._minutesPerDay),
+    (0, range.end),
+  ];
+}
+
+bool _rangesOverlap(_TaskRange a, _TaskRange b) {
+  for (final sa in _segments(a)) {
+    for (final sb in _segments(b)) {
+      if (sa.$1 < sb.$2 && sb.$1 < sa.$2) return true;
+    }
+  }
+  return false;
 }
 
 class PolarClockPainter extends CustomPainter {
   static const _minutesPerDay = 24 * 60;
 
   final TimeOfDay currentTime;
-  final List<Task> tasks;
+  final List<_ArcGeom> arcs;
   final Color trackColor;
   final Color nowColor;
   final Color nowOnColor;
 
   PolarClockPainter({
     required this.currentTime,
-    required this.tasks,
+    required this.arcs,
     required this.trackColor,
     required this.nowColor,
     required this.nowOnColor,
@@ -78,33 +337,14 @@ class PolarClockPainter extends CustomPainter {
 
     _drawHourTrack(canvas, center, hourTrackRadius, hourTrackWidth);
 
-    final timedTasks = tasks
-        .where((t) =>
-            !t.isAllDay &&
-            !t.isCanceled &&
-            t.startTime != null &&
-            t.endTime != null)
-        .toList();
-
-    final lanes = _assignTasksToTracks(timedTasks);
-    final laneCount = lanes.length;
     if (tracksOuter > tracksInner) {
-      if (laneCount > 0) {
-        final gap = laneCount > 1
-            ? math.min(2.5, (tracksOuter - tracksInner) * 0.015)
-            : 0.0;
-        final trackWidth =
-            ((tracksOuter - tracksInner) - gap * (laneCount - 1)) / laneCount;
-
-        for (var i = 0; i < laneCount; i++) {
-          final innerEdge = tracksInner + i * (trackWidth + gap);
-          final radius = innerEdge + trackWidth / 2;
-          for (final task in lanes[i]!) {
-            _drawTaskTrack(canvas, center, radius, trackWidth, task);
-          }
-        }
-      } else {
+      final visible = arcs.where((a) => a.opacity > 0.015 && a.duration > 0.4);
+      if (visible.isEmpty) {
         _drawGhostHourTracks(canvas, center, tracksInner, tracksOuter);
+      } else {
+        for (final arc in visible) {
+          _drawTaskTrack(canvas, center, tracksInner, tracksOuter, arc);
+        }
       }
     }
 
@@ -114,74 +354,6 @@ class PolarClockPainter extends CustomPainter {
       hourTrackRadius - hourTrackWidth / 2,
       maxRadius,
     );
-  }
-
-  Map<int, List<Task>> _assignTasksToTracks(List<Task> tasks) {
-    final taskRanges = tasks.map((task) {
-      final start = task.startTime!.hour * 60 + task.startTime!.minute;
-      final end = task.endTime!.hour * 60 + task.endTime!.minute;
-      return _TaskRange(task: task, start: start, end: end);
-    }).toList()
-      ..sort((a, b) {
-        final durationA = _durationMinutes(a);
-        final durationB = _durationMinutes(b);
-        final byDuration = durationB.compareTo(durationA);
-        if (byDuration != 0) return byDuration;
-        return a.start.compareTo(b.start);
-      });
-
-    final Map<int, List<Task>> tracks = {};
-    final List<List<_TaskRange>> trackRanges = [];
-
-    for (final taskRange in taskRanges) {
-      var trackIndex = -1;
-      for (var i = 0; i < trackRanges.length; i++) {
-        final overlaps = trackRanges[i].any(
-          (existing) => _rangesOverlap(taskRange, existing),
-        );
-        if (!overlaps) {
-          trackIndex = i;
-          break;
-        }
-      }
-
-      if (trackIndex == -1) {
-        trackIndex = trackRanges.length;
-        trackRanges.add([]);
-        tracks[trackIndex] = [];
-      }
-
-      trackRanges[trackIndex].add(taskRange);
-      tracks[trackIndex]!.add(taskRange.task);
-    }
-
-    return tracks;
-  }
-
-  int _durationMinutes(_TaskRange range) {
-    if (range.start <= range.end) {
-      return range.end - range.start;
-    }
-    return _minutesPerDay - range.start + range.end;
-  }
-
-  List<(int, int)> _segments(_TaskRange range) {
-    if (range.start == range.end) {
-      return [(range.start, range.end)];
-    }
-    if (range.start < range.end) {
-      return [(range.start, range.end)];
-    }
-    return [(range.start, _minutesPerDay), (0, range.end)];
-  }
-
-  bool _rangesOverlap(_TaskRange a, _TaskRange b) {
-    for (final sa in _segments(a)) {
-      for (final sb in _segments(b)) {
-        if (sa.$1 < sb.$2 && sb.$1 < sa.$2) return true;
-      }
-    }
-    return false;
   }
 
   void _drawHourTrack(
@@ -250,51 +422,53 @@ class PolarClockPainter extends CustomPainter {
   void _drawTaskTrack(
     Canvas canvas,
     Offset center,
-    double radius,
-    double width,
-    Task task,
+    double tracksInner,
+    double tracksOuter,
+    _ArcGeom arc,
   ) {
-    if (task.startTime == null || task.endTime == null) return;
+    final n = math.max(1.0, arc.laneCount);
+    final gap = n > 1
+        ? math.min(2.5, (tracksOuter - tracksInner) * 0.015)
+        : 0.0;
+    final trackWidth =
+        ((tracksOuter - tracksInner) - gap * (n - 1)) / n;
+    final innerEdge = tracksInner + arc.lane * (trackWidth + gap);
+    final radius = innerEdge + trackWidth / 2;
 
-    final startMinutes = task.startTime!.hour * 60 + task.startTime!.minute;
-    final endMinutes = task.endTime!.hour * 60 + task.endTime!.minute;
-    final startAngle = _angleForMinutes(startMinutes);
-    final sweepAngle = _sweepForMinutes(startMinutes, endMinutes);
+    final startAngle = _angleForMinutes(arc.start);
+    final sweepAngle = (arc.duration / _minutesPerDay) * 2 * math.pi;
+    if (sweepAngle < 0.004) return;
 
     canvas.drawPath(
-      _roundedTrackPath(center, radius, width, startAngle, sweepAngle),
+      _roundedTrackPath(center, radius, trackWidth, startAngle, sweepAngle),
       Paint()
-        ..color = task.color.withOpacity(
-          task.isUpcoming(currentTime) ? 0.95 : 0.38,
-        )
+        ..color = arc.color.withOpacity(arc.opacity)
         ..style = PaintingStyle.fill,
     );
 
-    if (!task.isActive(currentTime)) return;
+    final now = (currentTime.hour * 60 + currentTime.minute).toDouble();
+    var nowU = now;
+    final end = arc.start + arc.duration;
+    if (nowU < arc.start) nowU += _minutesPerDay;
+    if (nowU < arc.start || nowU >= end) return;
+    if (arc.opacity < 0.2) return;
 
-    final nowMinutes = currentTime.hour * 60 + currentTime.minute;
-    final remainingSweep = _sweepForMinutes(nowMinutes, endMinutes);
+    final remaining = end - nowU;
+    final remainingSweep = (remaining / _minutesPerDay) * 2 * math.pi;
     if (remainingSweep < 0.004) return;
 
     canvas.drawPath(
       _roundedTrackPath(
         center,
         radius,
-        width,
-        _angleForMinutes(nowMinutes),
+        trackWidth,
+        _angleForMinutes(nowU),
         remainingSweep,
       ),
       Paint()
-        ..color = task.color.withOpacity(0.95)
+        ..color = arc.color.withOpacity(0.95)
         ..style = PaintingStyle.fill,
     );
-  }
-
-  double _sweepForMinutes(int from, int to) {
-    if (to >= from) {
-      return ((to - from) / _minutesPerDay) * 2 * math.pi;
-    }
-    return ((_minutesPerDay - from + to) / _minutesPerDay) * 2 * math.pi;
   }
 
   Offset _polar(Offset center, double radius, double angle) {
@@ -428,7 +602,6 @@ class PolarClockPainter extends CustomPainter {
     final shaftWidth = math.max(3.0, (outerRadius - innerRadius) * 0.018);
     final tipRadius = shaftWidth * 1.15;
     final haloRadius = tipRadius + 1.6;
-    // Keep the cap fully inside the square so it isn't clipped at 12/6.
     final tipCenter = outerRadius - haloRadius - 1;
     final shaftEnd = tipCenter - tipRadius * 0.35;
 
@@ -475,7 +648,7 @@ class PolarClockPainter extends CustomPainter {
   @override
   bool shouldRepaint(PolarClockPainter oldDelegate) {
     return oldDelegate.currentTime != currentTime ||
-        oldDelegate.tasks != tasks ||
+        oldDelegate.arcs != arcs ||
         oldDelegate.trackColor != trackColor ||
         oldDelegate.nowColor != nowColor ||
         oldDelegate.nowOnColor != nowOnColor;
