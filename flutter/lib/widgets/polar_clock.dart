@@ -638,14 +638,6 @@ class PolarClockPainter extends CustomPainter {
     );
   }
 
-  Offset _polar(Offset center, double radius, double angle) {
-    return Offset(
-      center.dx + radius * math.cos(angle),
-      center.dy + radius * math.sin(angle),
-    );
-  }
-
-  /// Annular sector whose radial cuts use a small corner radius (not a full cap).
   Path _roundedTrackPath(
     Offset center,
     double radius,
@@ -653,109 +645,13 @@ class PolarClockPainter extends CustomPainter {
     double startAngle,
     double sweepAngle,
   ) {
-    final outerR = radius + width / 2;
-    final innerR = math.max(1.0, radius - width / 2);
-    var corner = math.min(width * 0.22, 7.0);
-    corner = math.min(corner, (outerR - innerR) / 2 * 0.9);
-
-    final innerLength = innerR * sweepAngle;
-    if (innerLength < corner * 2 + 2) {
-      corner = math.max(0.0, (innerLength - 2) / 2);
-    }
-
-    if (corner < 0.75) {
-      return _sharpTrackPath(
-        center,
-        outerR,
-        innerR,
-        startAngle,
-        sweepAngle,
-      );
-    }
-
-    final dOuter = math.asin(
-      (corner / (outerR - corner)).clamp(0.0, 0.999),
-    );
-    final dInner = math.asin(
-      (corner / (innerR + corner)).clamp(0.0, 0.999),
-    );
-
-    if (sweepAngle <= math.max(dOuter, dInner) * 2) {
-      return _sharpTrackPath(
-        center,
-        outerR,
-        innerR,
-        startAngle,
-        sweepAngle,
-      );
-    }
-
-    final endAngle = startAngle + sweepAngle;
-    final outerAlong = (outerR - corner) * math.cos(dOuter);
-    final innerAlong = (innerR + corner) * math.cos(dInner);
-    final cr = Radius.circular(corner);
-
-    final outerStart = _polar(center, outerR, startAngle + dOuter);
-    final innerEnd = _polar(center, innerR, endAngle - dInner);
-    final endOuterCut = _polar(center, outerAlong, endAngle);
-    final endInnerCut = _polar(center, innerAlong, endAngle);
-    final startInnerCut = _polar(center, innerAlong, startAngle);
-    final startOuterCut = _polar(center, outerAlong, startAngle);
-
-    final path = Path()..moveTo(outerStart.dx, outerStart.dy);
-    path.arcTo(
-      Rect.fromCircle(center: center, radius: outerR),
-      startAngle + dOuter,
-      sweepAngle - 2 * dOuter,
-      false,
-    );
-    path.arcToPoint(endOuterCut, radius: cr, clockwise: true);
-    path.lineTo(endInnerCut.dx, endInnerCut.dy);
-    path.arcToPoint(innerEnd, radius: cr, clockwise: true);
-    path.arcTo(
-      Rect.fromCircle(center: center, radius: innerR),
-      endAngle - dInner,
-      -(sweepAngle - 2 * dInner),
-      false,
-    );
-    path.arcToPoint(startInnerCut, radius: cr, clockwise: true);
-    path.lineTo(startOuterCut.dx, startOuterCut.dy);
-    path.arcToPoint(outerStart, radius: cr, clockwise: true);
-    path.close();
-    return path;
-  }
-
-  Path _sharpTrackPath(
-    Offset center,
-    double outerR,
-    double innerR,
-    double startAngle,
-    double sweepAngle,
-  ) {
-    final endAngle = startAngle + sweepAngle;
-    final path = Path()
-      ..moveTo(
-        _polar(center, outerR, startAngle).dx,
-        _polar(center, outerR, startAngle).dy,
-      );
-    path.arcTo(
-      Rect.fromCircle(center: center, radius: outerR),
+    return polarRoundedTrackPath(
+      center,
+      radius,
+      width,
       startAngle,
       sweepAngle,
-      false,
     );
-    path.lineTo(
-      _polar(center, innerR, endAngle).dx,
-      _polar(center, innerR, endAngle).dy,
-    );
-    path.arcTo(
-      Rect.fromCircle(center: center, radius: innerR),
-      endAngle,
-      -sweepAngle,
-      false,
-    );
-    path.close();
-    return path;
   }
 
   void _drawNowIndicator(
@@ -821,4 +717,134 @@ class PolarClockPainter extends CustomPainter {
         oldDelegate.nowOnColor != nowOnColor ||
         oldDelegate.showNow != showNow;
   }
+}
+
+Offset polarOffset(Offset center, double radius, double angle) {
+  return Offset(
+    center.dx + radius * math.cos(angle),
+    center.dy + radius * math.sin(angle),
+  );
+}
+
+Path polarSharpTrackPath(
+  Offset center,
+  double outerR,
+  double innerR,
+  double startAngle,
+  double sweepAngle,
+) {
+  final endAngle = startAngle + sweepAngle;
+  final path = Path()
+    ..moveTo(
+      polarOffset(center, outerR, startAngle).dx,
+      polarOffset(center, outerR, startAngle).dy,
+    );
+  path.arcTo(
+    Rect.fromCircle(center: center, radius: outerR),
+    startAngle,
+    sweepAngle,
+    false,
+  );
+  path.lineTo(
+    polarOffset(center, innerR, endAngle).dx,
+    polarOffset(center, innerR, endAngle).dy,
+  );
+  path.arcTo(
+    Rect.fromCircle(center: center, radius: innerR),
+    endAngle,
+    -sweepAngle,
+    false,
+  );
+  path.close();
+  return path;
+}
+
+/// Annular sector with rounded radial corners (not a full round stroke cap).
+Path polarRoundedTrackPath(
+  Offset center,
+  double radius,
+  double width,
+  double startAngle,
+  double sweepAngle, {
+  double cornerFraction = 0.22,
+  double minCorner = 0.75,
+  double? cornerRadius,
+}) {
+  final outerR = radius + width / 2;
+  final innerR = math.max(1.0, radius - width / 2);
+  final maxFit = (outerR - innerR) / 2 * 0.9;
+  var corner = cornerRadius ?? math.min(width * cornerFraction, 7.0);
+  corner = math.min(corner, maxFit);
+
+  if (cornerRadius == null) {
+    final innerLength = innerR * sweepAngle;
+    if (innerLength < corner * 2 + 1) {
+      corner = math.max(0.0, (innerLength - 1) / 2);
+    }
+  }
+
+  if (corner < minCorner) {
+    return polarSharpTrackPath(
+      center,
+      outerR,
+      innerR,
+      startAngle,
+      sweepAngle,
+    );
+  }
+
+  final dOuterRaw = math.asin(
+    (corner / (outerR - corner)).clamp(0.0, 0.999),
+  );
+  final dInnerRaw = math.asin(
+    (corner / (innerR + corner)).clamp(0.0, 0.999),
+  );
+  // Fixed-pixel corners: same angular inset so inner/outer don't look different.
+  final dOuter =
+      cornerRadius != null ? (dOuterRaw + dInnerRaw) / 2 : dOuterRaw;
+  final dInner = dOuter;
+
+  if (sweepAngle <= math.max(dOuter, dInner) * 2) {
+    return polarSharpTrackPath(
+      center,
+      outerR,
+      innerR,
+      startAngle,
+      sweepAngle,
+    );
+  }
+
+  final endAngle = startAngle + sweepAngle;
+  final outerAlong = (outerR - corner) * math.cos(dOuter);
+  final innerAlong = (innerR + corner) * math.cos(dInner);
+  final cr = Radius.circular(corner);
+
+  final outerStart = polarOffset(center, outerR, startAngle + dOuter);
+  final innerEnd = polarOffset(center, innerR, endAngle - dInner);
+  final endOuterCut = polarOffset(center, outerAlong, endAngle);
+  final endInnerCut = polarOffset(center, innerAlong, endAngle);
+  final startInnerCut = polarOffset(center, innerAlong, startAngle);
+  final startOuterCut = polarOffset(center, outerAlong, startAngle);
+
+  final path = Path()..moveTo(outerStart.dx, outerStart.dy);
+  path.arcTo(
+    Rect.fromCircle(center: center, radius: outerR),
+    startAngle + dOuter,
+    sweepAngle - 2 * dOuter,
+    false,
+  );
+  path.arcToPoint(endOuterCut, radius: cr, clockwise: true);
+  path.lineTo(endInnerCut.dx, endInnerCut.dy);
+  path.arcToPoint(innerEnd, radius: cr, clockwise: true);
+  path.arcTo(
+    Rect.fromCircle(center: center, radius: innerR),
+    endAngle - dInner,
+    -(sweepAngle - 2 * dInner),
+    false,
+  );
+  path.arcToPoint(startInnerCut, radius: cr, clockwise: true);
+  path.lineTo(startOuterCut.dx, startOuterCut.dy);
+  path.arcToPoint(outerStart, radius: cr, clockwise: true);
+  path.close();
+  return path;
 }

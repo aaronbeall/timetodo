@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
+import 'package:timetodo/screens/settings_screen.dart';
 import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/calendar_timeline.dart';
 import 'package:timetodo/widgets/change_toast.dart';
@@ -224,7 +225,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Settings',
+            onPressed: () => openSettings(context),
+            icon: const Icon(Icons.settings_outlined),
+          ),
         ],
       ),
       body: PageView.builder(

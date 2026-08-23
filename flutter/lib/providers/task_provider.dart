@@ -542,15 +542,13 @@ class TaskProvider extends ChangeNotifier {
 
   VoidCallback loadDemoSchedule(DemoScheduleKind kind) {
     return _undoable(() {
+      final demo = buildDemoSchedule(DateTime.now(), kind);
       _tasks
         ..clear()
-        ..addAll(buildDemoSchedule(DateTime.now(), kind));
-      _occurrences.clear();
-      for (final task in _tasks) {
-        if (task.repeatType == RepeatType.none) {
-          _pinDay(task.id, task.startDate);
-        }
-      }
+        ..addAll(demo.tasks);
+      _occurrences
+        ..clear()
+        ..addAll(demo.occurrences);
     });
   }
 

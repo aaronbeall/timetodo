@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:timetodo/models/task.dart';
+import 'package:timetodo/models/task_occurrence.dart';
+import 'package:timetodo/time_utils.dart';
 
 enum DemoScheduleKind {
   light,
   typical,
   packed,
+}
+
+class DemoSchedule {
+  final List<Task> tasks;
+  final List<TaskOccurrence> occurrences;
+
+  const DemoSchedule({required this.tasks, required this.occurrences});
 }
 
 TimeOfDay _t(int hour, int minute) => TimeOfDay(hour: hour, minute: minute);
@@ -14,6 +23,16 @@ TimeOfDay _fromMinutes(int minutes) {
   final normalized = m < 0 ? m + 24 * 60 : m;
   return TimeOfDay(hour: normalized ~/ 60, minute: normalized % 60);
 }
+
+const _weekdays = [
+  DateTime.monday,
+  DateTime.tuesday,
+  DateTime.wednesday,
+  DateTime.thursday,
+  DateTime.friday,
+];
+
+const _mwf = [DateTime.monday, DateTime.wednesday, DateTime.friday];
 
 const _palette = [
   Color(0xFF5C6BC0),
@@ -31,11 +50,13 @@ const _palette = [
 ];
 
 class _DemoBuilder {
-  _DemoBuilder(this.day)
-      : date = DateTime(day.year, day.month, day.day);
+  _DemoBuilder(this.today)
+      : date = dateOnly(today),
+        historyStart = dateOnly(today).subtract(const Duration(days: 21));
 
-  final DateTime day;
+  final DateTime today;
   final DateTime date;
+  final DateTime historyStart;
   int _n = 0;
 
   Task timed({
@@ -45,42 +66,46 @@ class _DemoBuilder {
     Color? color,
     RepeatType repeat = RepeatType.none,
     List<int>? weekdays,
+    DateTime? startDate,
   }) {
     final i = _n++;
+    final begins = startDate ??
+        (repeat == RepeatType.none ? date : historyStart);
     return Task(
       id: 'demo-$i',
       label: label,
       startTime: start,
       endTime: end,
       color: color ?? _palette[i % _palette.length],
-      startDate: date,
+      startDate: begins,
       repeatType: repeat,
       repeatWeekdays: weekdays,
     );
   }
 
-  Task allDay(String label, Color color) {
+  Task allDay(String label, Color color, {RepeatType repeat = RepeatType.daily}) {
     final i = _n++;
     return Task(
       id: 'demo-$i',
       label: label,
       isAllDay: true,
       color: color,
-      startDate: date,
-      repeatType: RepeatType.daily,
+      startDate: repeat == RepeatType.none ? date : historyStart,
+      repeatType: repeat,
     );
   }
 }
 
-List<Task> buildDemoSchedule(DateTime day, DemoScheduleKind kind) {
-  switch (kind) {
-    case DemoScheduleKind.light:
-      return _light(day);
-    case DemoScheduleKind.typical:
-      return _typical(day);
-    case DemoScheduleKind.packed:
-      return _packed(day);
-  }
+DemoSchedule buildDemoSchedule(DateTime day, DemoScheduleKind kind) {
+  final tasks = switch (kind) {
+    DemoScheduleKind.light => _light(day),
+    DemoScheduleKind.typical => _typical(day),
+    DemoScheduleKind.packed => _packed(day),
+  };
+  return DemoSchedule(
+    tasks: tasks,
+    occurrences: _history(tasks, dateOnly(day)),
+  );
 }
 
 List<Task> _light(DateTime day) {
@@ -99,13 +124,7 @@ List<Task> _light(DateTime day) {
       end: _t(17, 0),
       color: const Color(0xFF42A5F5),
       repeat: RepeatType.weekly,
-      weekdays: const [
-        DateTime.monday,
-        DateTime.tuesday,
-        DateTime.wednesday,
-        DateTime.thursday,
-        DateTime.friday,
-      ],
+      weekdays: _weekdays,
     ),
     d.timed(
       label: 'Dinner',
@@ -140,13 +159,7 @@ List<Task> _typical(DateTime day) {
       end: _t(15, 0),
       color: const Color(0xFF42A5F5),
       repeat: RepeatType.weekly,
-      weekdays: const [
-        DateTime.monday,
-        DateTime.tuesday,
-        DateTime.wednesday,
-        DateTime.thursday,
-        DateTime.friday,
-      ],
+      weekdays: _weekdays,
     ),
     d.timed(
       label: 'Collaboration block',
@@ -154,31 +167,30 @@ List<Task> _typical(DateTime day) {
       end: _t(13, 30),
       color: const Color(0xFF26A69A),
       repeat: RepeatType.weekly,
-      weekdays: const [
-        DateTime.monday,
-        DateTime.tuesday,
-        DateTime.wednesday,
-        DateTime.thursday,
-        DateTime.friday,
-      ],
+      weekdays: _weekdays,
     ),
     d.timed(
       label: 'Project time',
       start: _t(15, 0),
       end: _t(19, 0),
       color: const Color(0xFF7E57C2),
+      repeat: RepeatType.weekly,
+      weekdays: _weekdays,
     ),
     d.timed(
       label: 'Workout',
       start: _t(17, 30),
       end: _t(19, 30),
       color: const Color(0xFFEF5350),
+      repeat: RepeatType.weekly,
+      weekdays: _mwf,
     ),
     d.timed(
       label: 'Evening',
       start: _t(19, 30),
       end: _t(22, 0),
       color: const Color(0xFFAB47BC),
+      repeat: RepeatType.daily,
     ),
     d.allDay('Drink water', const Color(0xFF29B6F6)),
   ];
@@ -195,19 +207,55 @@ List<Task> _packed(DateTime day) {
       repeat: RepeatType.daily,
     ),
     d.timed(
-      label: 'Night notes',
-      start: _t(22, 0),
-      end: _t(23, 30),
+      label: 'Morning routine',
+      start: _t(6, 30),
+      end: _t(8, 30),
+      color: const Color(0xFFFFB74D),
+      repeat: RepeatType.daily,
     ),
     d.timed(
-      label: 'Wind down',
-      start: _t(21, 15),
-      end: _t(22, 45),
+      label: 'Deep work',
+      start: _t(9, 0),
+      end: _t(12, 0),
+      color: const Color(0xFF42A5F5),
+      repeat: RepeatType.weekly,
+      weekdays: _weekdays,
+    ),
+    d.timed(
+      label: 'Collaboration',
+      start: _t(13, 0),
+      end: _t(15, 30),
+      color: const Color(0xFF26A69A),
+      repeat: RepeatType.weekly,
+      weekdays: _weekdays,
+    ),
+    d.timed(
+      label: 'Project time',
+      start: _t(15, 30),
+      end: _t(18, 30),
+      color: const Color(0xFF7E57C2),
+      repeat: RepeatType.weekly,
+      weekdays: _weekdays,
+    ),
+    d.timed(
+      label: 'Workout',
+      start: _t(18, 30),
+      end: _t(19, 45),
+      color: const Color(0xFFEF5350),
+      repeat: RepeatType.weekly,
+      weekdays: _mwf,
+    ),
+    d.timed(
+      label: 'Evening',
+      start: _t(20, 0),
+      end: _t(22, 30),
+      color: const Color(0xFFAB47BC),
+      repeat: RepeatType.daily,
     ),
     d.allDay('Drink water', const Color(0xFF29B6F6)),
   ];
 
-  void span(String label, int startMin, int durationMin) {
+  void todayBlock(String label, int startMin, int durationMin) {
     tasks.add(
       d.timed(
         label: label,
@@ -217,25 +265,76 @@ List<Task> _packed(DateTime day) {
     );
   }
 
-  for (var start = 7 * 60; start < 21 * 60; start += 180) {
-    span('Focus ${1 + ((start - 7 * 60) ~/ 180)}', start, 150);
-  }
-
-  for (var start = 9 * 60; start < 17 * 60; start += 40) {
-    span('Meeting ${1 + ((start - 9 * 60) ~/ 40)}', start, 45);
-  }
-
-  for (var start = 10 * 60; start < 12 * 60; start += 24) {
-    span('Ping ${1 + ((start - 10 * 60) ~/ 24)}', start, 25);
-  }
-
-  for (var start = 14 * 60; start < 16 * 60; start += 30) {
-    span('Review ${1 + ((start - 14 * 60) ~/ 30)}', start, 50);
-  }
-
-  span('Gym', 17 * 60 + 45, 75);
-  span('Cook', 18 * 60 + 40, 70);
-  span('Family', 19 * 60 + 15, 100);
+  todayBlock('Standup', 9 * 60 + 15, 45);
+  todayBlock('Design review', 10 * 60, 90);
+  todayBlock('Client call', 11 * 60, 60);
+  todayBlock('1:1', 13 * 60 + 15, 50);
+  todayBlock('Planning workshop', 14 * 60, 120);
+  todayBlock('Hiring loop', 16 * 60, 90);
+  todayBlock('Inbox', 12 * 60 + 15, 35);
+  todayBlock('Slack catch-up', 15 * 60 + 10, 25);
 
   return tasks;
+}
+
+List<TaskOccurrence> _history(List<Task> tasks, DateTime today) {
+  final occurrences = <TaskOccurrence>[];
+  final yesterday = today.subtract(const Duration(days: 1));
+
+  for (final task in tasks) {
+    if (task.repeatType == RepeatType.none) {
+      occurrences.add(_pin(task, dateOnly(task.startDate)));
+      continue;
+    }
+
+    var cursor = dateOnly(task.firstFrom);
+    while (!cursor.isAfter(yesterday)) {
+      if (task.occursOn(cursor)) {
+        final roll = _mix(task.id, cursor);
+        final bias = _bias(task.label);
+        if (roll < bias.completeUntil) {
+          occurrences.add(_status(task, cursor, completed: true));
+        } else if (roll < bias.skipUntil) {
+          occurrences.add(_status(task, cursor, skipped: true));
+        }
+      }
+      cursor = cursor.add(const Duration(days: 1));
+    }
+  }
+  return occurrences;
+}
+
+({int completeUntil, int skipUntil}) _bias(String label) {
+  final lower = label.toLowerCase();
+  if (lower.contains('water')) return (completeUntil: 8, skipUntil: 9);
+  if (lower.contains('sleep')) return (completeUntil: 7, skipUntil: 8);
+  if (lower.contains('workout') || lower.contains('gym')) {
+    return (completeUntil: 4, skipUntil: 7);
+  }
+  return (completeUntil: 6, skipUntil: 8);
+}
+
+int _mix(String id, DateTime day) => Object.hash(id, dateKey(day)).abs() % 10;
+
+TaskOccurrence _pin(Task task, DateTime day) {
+  return TaskOccurrence(
+    id: TaskOccurrence.idFor(task.id, day),
+    taskId: task.id,
+    date: dateOnly(day),
+  );
+}
+
+TaskOccurrence _status(
+  Task task,
+  DateTime day, {
+  bool completed = false,
+  bool skipped = false,
+}) {
+  return TaskOccurrence(
+    id: TaskOccurrence.idFor(task.id, day),
+    taskId: task.id,
+    date: dateOnly(day),
+    isCompleted: completed,
+    isCanceled: skipped,
+  );
 }

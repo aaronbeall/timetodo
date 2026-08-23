@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:timetodo/app_navigation.dart';
 import 'package:timetodo/data/demo_schedule.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/providers/theme_controller.dart';
@@ -95,40 +96,34 @@ class SettingsScreen extends StatelessWidget {
             leading: const Icon(Icons.wb_sunny_outlined),
             title: const Text('Light day'),
             subtitle: const Text('Load a light test schedule'),
-            onTap: () {
-              final undo = tasks.loadDemoSchedule(DemoScheduleKind.light);
-              showChangeToast(
-                context,
-                message: 'Loaded Light day',
-                onUndo: undo,
-              );
-            },
+            onTap: () => _loadDemoAndGoHome(
+              context,
+              tasks,
+              DemoScheduleKind.light,
+              'Light day',
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.calendar_view_day_outlined),
             title: const Text('Typical day'),
             subtitle: const Text('Load a typical test schedule'),
-            onTap: () {
-              final undo = tasks.loadDemoSchedule(DemoScheduleKind.typical);
-              showChangeToast(
-                context,
-                message: 'Loaded Typical day',
-                onUndo: undo,
-              );
-            },
+            onTap: () => _loadDemoAndGoHome(
+              context,
+              tasks,
+              DemoScheduleKind.typical,
+              'Typical day',
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.view_week_outlined),
             title: const Text('Packed day'),
             subtitle: const Text('Load a packed test schedule'),
-            onTap: () {
-              final undo = tasks.loadDemoSchedule(DemoScheduleKind.packed);
-              showChangeToast(
-                context,
-                message: 'Loaded Packed day',
-                onUndo: undo,
-              );
-            },
+            onTap: () => _loadDemoAndGoHome(
+              context,
+              tasks,
+              DemoScheduleKind.packed,
+              'Packed day',
+            ),
           ),
           ListTile(
             leading: Icon(
@@ -177,6 +172,25 @@ class SettingsScreen extends StatelessWidget {
 
 void _stub(BuildContext context, String message) {
   showChangeToast(context, message: message);
+}
+
+void _loadDemoAndGoHome(
+  BuildContext context,
+  TaskProvider tasks,
+  DemoScheduleKind kind,
+  String name,
+) {
+  final undo = tasks.loadDemoSchedule(kind);
+  goToTodayTab();
+  Navigator.of(context).popUntil((route) => route.isFirst);
+  final messenger = appMessengerKey.currentState;
+  if (messenger != null) {
+    showChangeToastOn(
+      messenger,
+      message: 'Loaded $name',
+      onUndo: undo,
+    );
+  }
 }
 
 Future<void> _confirmClear(BuildContext context, TaskProvider tasks) async {

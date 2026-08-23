@@ -8,6 +8,7 @@ import 'package:timetodo/screens/tasks_screen.dart';
 import 'package:timetodo/screens/calendar_screen.dart';
 import 'package:timetodo/screens/reports_screen.dart';
 import 'package:timetodo/models/task.dart';
+import 'package:timetodo/app_navigation.dart';
 import 'package:timetodo/widgets/polar_nav_icon.dart';
 
 void main() {
@@ -74,6 +75,7 @@ class TimeToDoApp extends StatelessWidget {
               snackBarTheme: _snackBarTheme(Brightness.dark),
             ),
             themeMode: theme.mode,
+            scaffoldMessengerKey: appMessengerKey,
             home: const MainScreen(),
           );
         },
@@ -94,6 +96,25 @@ class _MainScreenState extends State<MainScreen> {
   int _tasksFocusTick = 0;
   String? _revealTaskId;
   int _revealTick = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    homeTabIndex.value = _currentIndex;
+    homeTabIndex.addListener(_onHomeTab);
+  }
+
+  @override
+  void dispose() {
+    homeTabIndex.removeListener(_onHomeTab);
+    super.dispose();
+  }
+
+  void _onHomeTab() {
+    final index = homeTabIndex.value;
+    if (!mounted || index == _currentIndex) return;
+    setState(() => _currentIndex = index);
+  }
 
   void _openTaskEditor(Task task) {
     setState(() {
@@ -125,6 +146,7 @@ class _MainScreenState extends State<MainScreen> {
         onDestinationSelected: (int index) {
           setState(() {
             _currentIndex = index;
+            homeTabIndex.value = index;
             if (index == 1) {
               _tasksFocusTick++;
             }
