@@ -2,7 +2,8 @@
 
 ### WORK IN PROGRESS ###
 
-<img width="389" height="849" alt="image" src="https://github.com/user-attachments/assets/4cd2e4cb-78b0-4197-8f0c-c963a3f23920" />
+<img width="510" height="946" alt="image" src="https://github.com/user-attachments/assets/ddd2c886-b46c-4199-9075-f8f9b729480c" />
+
 
 
 A beautiful and slick mobile app called TimeToDo:
