@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:timetodo/models/scheduled_task.dart';
+import 'package:timetodo/time_utils.dart';
 
 class _TaskRange {
   final ScheduledTask task;
@@ -39,15 +42,42 @@ class _ArcGeom {
   String get signature =>
       '$id:${start.toStringAsFixed(1)}:${duration.toStringAsFixed(1)}:'
       '${lane.toStringAsFixed(2)}:${color.value}:${opacity.toStringAsFixed(2)}';
+
+  _ArcGeom copyWith({
+    double? start,
+    double? duration,
+    double? opacity,
+    double? lane,
+    double? laneCount,
+  }) {
+    return _ArcGeom(
+      id: id,
+      start: start ?? this.start,
+      duration: duration ?? this.duration,
+      color: color,
+      opacity: opacity ?? this.opacity,
+      lane: lane ?? this.lane,
+      laneCount: laneCount ?? this.laneCount,
+    );
+  }
 }
 
+enum _MoveGrab { body, start, end }
+
 class PolarClock extends StatefulWidget {
+  static const moveActionsExtent = 48.0;
   final TimeOfDay currentTime;
   final List<ScheduledTask> tasks;
   final double size;
   final ValueChanged<ScheduledTask>? onTaskTap;
   final bool animate;
   final bool showNow;
+  final bool enableMove;
+  final String? movingTaskId;
+  final ValueChanged<ScheduledTask>? onMoveStart;
+  final VoidCallback? onMoveCancel;
+  final void Function(ScheduledTask task, TimeOfDay start, TimeOfDay end)?
+      onMoveCommit;
 
   const PolarClock({
     super.key,
@@ -57,6 +87,11 @@ class PolarClock extends StatefulWidget {
     this.onTaskTap,
     this.animate = true,
     this.showNow = true,
+    this.enableMove = false,
+    this.movingTaskId,
+    this.onMoveStart,
+    this.onMoveCancel,
+    this.onMoveCommit,
   });
 
   @override
@@ -66,11 +101,24 @@ class PolarClock extends StatefulWidget {
 class _PolarClockState extends State<PolarClock>
     with SingleTickerProviderStateMixin {
   static const _animDuration = Duration(milliseconds: 480);
+  static const _snap = 5.0;
+  static const _minDuration = 5.0;
 
   late final AnimationController _controller;
   late final CurvedAnimation _curve;
   Map<String, _ArcGeom> _from = {};
   Map<String, _ArcGeom> _to = {};
+  double? _draftStart;
+  double? _draftDuration;
+  _MoveGrab? _grab;
+  _MoveGrab? _pendingLabel;
+  Offset? _pointerDownPos;
+  double _grabStart = 0;
+  double _grabDuration = 0;
+  double _grabPointer = 0;
+  int _lastSnapped = -1;
+  String? _sessionId;
+  ({Rect start, Rect end})? _moveChips;
 
   @override
   void initState() {
@@ -81,6 +129,9 @@ class _PolarClockState extends State<PolarClock>
       fullColor: !widget.showNow,
     );
     _from = Map.of(_to);
+    if (widget.movingTaskId != null) {
+      _primeDraft(widget.movingTaskId!);
+    }
     _controller = AnimationController(vsync: this, duration: _animDuration);
     _curve = CurvedAnimation(
       parent: _controller,
@@ -102,7 +153,303 @@ class _PolarClockState extends State<PolarClock>
   @override
   void didUpdateWidget(PolarClock oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.movingTaskId != oldWidget.movingTaskId) {
+      _moveChips = null;
+      if (widget.movingTaskId == null) {
+        _sessionId = null;
+        _draftStart = null;
+        _draftDuration = null;
+        _grab = null;
+      } else {
+        _sessionId = widget.movingTaskId;
+        if (_draftStart == null) {
+          _primeDraft(widget.movingTaskId!);
+        }
+      }
+    }
     _syncArcs(reduce: MediaQuery.disableAnimationsOf(context));
+  }
+
+  String? get _activeId => widget.movingTaskId ?? _sessionId;
+
+  bool get _isMoving => _activeId != null && _draftStart != null;
+
+  ScheduledTask? _taskById(String id) {
+    for (final task in widget.tasks) {
+      if (task.id == id) return task;
+    }
+    return null;
+  }
+
+  void _primeDraft(String id) {
+    final task = _taskById(id);
+    if (task == null ||
+        task.isAllDay ||
+        task.startTime == null ||
+        task.endTime == null) {
+      _draftStart = null;
+      _draftDuration = null;
+      return;
+    }
+    _draftStart = minutesOf(task.startTime!).toDouble();
+    _draftDuration =
+        durationMinutes(task.startTime!, task.endTime!).toDouble();
+    _lastSnapped = -1;
+  }
+
+  double _snapMinutes(double minutes) {
+    var value = (minutes / _snap).round() * _snap;
+    value %= PolarClockPainter._minutesPerDay;
+    if (value < 0) value += PolarClockPainter._minutesPerDay;
+    return value;
+  }
+
+  double? _minutesAt(Offset local) {
+    final center = Offset(widget.size / 2, widget.size / 2);
+    final delta = local - center;
+    if (delta.distance < 8) return null;
+    var angle = math.atan2(delta.dy, delta.dx);
+    var minutes =
+        ((angle - math.pi) / (2 * math.pi)) * PolarClockPainter._minutesPerDay;
+    minutes %= PolarClockPainter._minutesPerDay;
+    if (minutes < 0) minutes += PolarClockPainter._minutesPerDay;
+    return minutes;
+  }
+
+  _MoveGrab? _grabAt(Offset local, _ArcGeom arc) {
+    final size = Size(widget.size, widget.size);
+    final band = PolarClockPainter.bandFor(arc, size);
+    final startPt =
+        PolarClockPainter.pointAt(size, band.mid, arc.start);
+    final endMin = (arc.start + arc.duration) % PolarClockPainter._minutesPerDay;
+    final endPt = PolarClockPainter.pointAt(size, band.mid, endMin);
+    final handleR = 16.0;
+    final ds = (local - startPt).distance;
+    final de = (local - endPt).distance;
+    if (ds <= handleR && ds <= de) return _MoveGrab.start;
+    if (de <= handleR) return _MoveGrab.end;
+    if (PolarClockPainter.idAt(local, size, [arc]) == arc.id) {
+      return _MoveGrab.body;
+    }
+    return null;
+  }
+
+  _MoveGrab? _labelAt(Offset local, _ArcGeom arc) {
+    final chips = _moveChips;
+    if (chips == null) return null;
+    final startRect = chips.start.inflate(4);
+    final endRect = chips.end.inflate(4);
+    final inStart = startRect.contains(local);
+    final inEnd = endRect.contains(local);
+    if (inStart && inEnd) {
+      final cs = (local - chips.start.center).distance;
+      final ce = (local - chips.end.center).distance;
+      return cs <= ce ? _MoveGrab.start : _MoveGrab.end;
+    }
+    if (inStart) return _MoveGrab.start;
+    if (inEnd) return _MoveGrab.end;
+    return null;
+  }
+
+  void _beginMove(String id) {
+    final task = _taskById(id);
+    if (task == null ||
+        task.isAllDay ||
+        task.startTime == null ||
+        task.endTime == null) {
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    _sessionId = id;
+    _primeDraft(id);
+    _syncArcs(reduce: MediaQuery.disableAnimationsOf(context));
+    setState(() {});
+    widget.onMoveStart?.call(task);
+  }
+
+  void _onPointerDown(Offset local) {
+    if (!_isMoving) return;
+    _ArcGeom? moving;
+    for (final arc in _paintArcs(_displayed(_curve.value).values.toList())) {
+      if (arc.id == _activeId) {
+        moving = arc;
+        break;
+      }
+    }
+    if (moving == null) return;
+    _pointerDownPos = local;
+    final grab = _grabAt(local, moving);
+    final pointer = _minutesAt(local);
+    if (grab == _MoveGrab.start || grab == _MoveGrab.end) {
+      _pendingLabel = null;
+      if (pointer == null) {
+        _grab = null;
+        return;
+      }
+      _grab = grab;
+      _grabStart = _draftStart!;
+      _grabDuration = _draftDuration!;
+      _grabPointer = pointer;
+      return;
+    }
+    final label = _labelAt(local, moving);
+    if (label != null) {
+      _grab = null;
+      _pendingLabel = label;
+      return;
+    }
+    _pendingLabel = null;
+    if (grab == null || pointer == null) {
+      _grab = null;
+      return;
+    }
+    _grab = grab;
+    _grabStart = _draftStart!;
+    _grabDuration = _draftDuration!;
+    _grabPointer = pointer;
+  }
+
+  void _onPointerMove(Offset local) {
+    if (!_isMoving) return;
+    if (_pendingLabel != null) {
+      if (_pointerDownPos != null &&
+          (local - _pointerDownPos!).distance > 12) {
+        _pendingLabel = null;
+      }
+      return;
+    }
+    if (_grab == null) return;
+    final pointer = _minutesAt(local);
+    if (pointer == null) return;
+    var delta = pointer - _grabPointer;
+    const day = PolarClockPainter._minutesPerDay;
+    if (delta > day / 2) delta -= day;
+    if (delta < -day / 2) delta += day;
+
+    var start = _grabStart;
+    var duration = _grabDuration;
+    switch (_grab!) {
+      case _MoveGrab.body:
+        start = _snapMinutes(_grabStart + delta);
+        break;
+      case _MoveGrab.start:
+        final end = (_grabStart + _grabDuration) % day;
+        start = _snapMinutes(pointer);
+        duration = end - start;
+        if (duration <= 0) duration += day;
+        if (duration < _minDuration) duration = _minDuration;
+        break;
+      case _MoveGrab.end:
+        start = _grabStart;
+        duration = _snapMinutes(pointer) - start;
+        if (duration <= 0) duration += day;
+        if (duration < _minDuration) duration = _minDuration;
+        duration = _snapMinutes(start + duration) - start;
+        if (duration <= 0) duration += day;
+        if (duration < _minDuration) duration = _minDuration;
+        break;
+    }
+    final snapped = ((start + duration) * 100 + start).round();
+    if (snapped != _lastSnapped) {
+      _lastSnapped = snapped;
+      HapticFeedback.selectionClick();
+    }
+    setState(() {
+      _draftStart = start % day;
+      if (_draftStart! < 0) _draftStart = _draftStart! + day;
+      _draftDuration = duration;
+    });
+    _syncArcs(reduce: true);
+  }
+
+  void _onPointerUp() {
+    final pending = _pendingLabel;
+    _grab = null;
+    _pendingLabel = null;
+    _pointerDownPos = null;
+    if (pending == _MoveGrab.start || pending == _MoveGrab.end) {
+      _pickMoveTime(pending!);
+    }
+  }
+
+  Future<void> _pickMoveTime(_MoveGrab which) async {
+    final start = _draftStart;
+    final duration = _draftDuration;
+    if (start == null || duration == null) return;
+    const day = PolarClockPainter._minutesPerDay;
+    final initial = which == _MoveGrab.start
+        ? timeFromMinutes(start.round())
+        : timeFromMinutes((start + duration).round() % day);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      helpText: which == _MoveGrab.start ? 'Start time' : 'End time',
+    );
+    if (picked == null || !mounted) return;
+    final minutes = minutesOf(picked).toDouble();
+    var nextStart = start;
+    var nextDuration = duration;
+    if (which == _MoveGrab.start) {
+      final end = (start + duration) % day;
+      nextStart = minutes;
+      nextDuration = end - nextStart;
+      if (nextDuration <= 0) nextDuration += day;
+      if (nextDuration < _minDuration) nextDuration = _minDuration;
+    } else {
+      nextDuration = minutes - nextStart;
+      if (nextDuration <= 0) nextDuration += day;
+      if (nextDuration < _minDuration) nextDuration = _minDuration;
+    }
+    HapticFeedback.selectionClick();
+    setState(() {
+      _draftStart = nextStart % day;
+      if (_draftStart! < 0) _draftStart = _draftStart! + day;
+      _draftDuration = nextDuration;
+    });
+    _syncArcs(reduce: MediaQuery.disableAnimationsOf(context));
+  }
+
+  void _commitMove() {
+    final id = _activeId;
+    final start = _draftStart;
+    final duration = _draftDuration;
+    if (id == null || start == null || duration == null) return;
+    final task = _taskById(id);
+    if (task == null) return;
+    const day = PolarClockPainter._minutesPerDay;
+    widget.onMoveCommit?.call(
+      task,
+      timeFromMinutes(start.round()),
+      timeFromMinutes((start + duration).round() % day),
+    );
+    setState(() {
+      _sessionId = null;
+      _draftStart = null;
+      _draftDuration = null;
+      _grab = null;
+    });
+  }
+
+  void _cancelMove() {
+    setState(() {
+      _sessionId = null;
+      _draftStart = null;
+      _draftDuration = null;
+      _grab = null;
+    });
+    widget.onMoveCancel?.call();
+  }
+
+  List<_ArcGeom> _paintArcs(List<_ArcGeom> base) {
+    final id = _activeId;
+    if (id == null || !_isMoving) return base;
+    return [
+      for (final arc in base)
+        if (arc.id == id)
+          arc.copyWith(opacity: 1)
+        else
+          arc.copyWith(opacity: arc.opacity * 0.22),
+    ];
   }
 
   void _syncArcs({required bool reduce}) {
@@ -110,6 +457,9 @@ class _PolarClockState extends State<PolarClock>
       widget.tasks,
       widget.currentTime,
       fullColor: !widget.showNow,
+      draftId: _isMoving ? _activeId : null,
+      draftStart: _draftStart,
+      draftDuration: _draftDuration,
     );
     if (_signature(next) == _signature(_to)) return;
     _from = _displayed(_curve.value);
@@ -136,40 +486,104 @@ class _PolarClockState extends State<PolarClock>
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: widget.size,
-      height: widget.size,
-      child: AnimatedBuilder(
-        animation: _curve,
-        builder: (context, _) {
-          final arcs = _displayed(_curve.value).values.toList();
-          return _ArcHitTarget(
-            arcs: arcs,
-            onTapId: widget.onTaskTap == null
-                ? null
-                : (id) {
-                    ScheduledTask? task;
-                    for (final t in widget.tasks) {
-                      if (t.id == id) {
-                        task = t;
-                        break;
-                      }
-                    }
-                    if (task != null) widget.onTaskTap!(task);
-                  },
-            child: CustomPaint(
-              painter: PolarClockPainter(
-                currentTime: widget.currentTime,
-                arcs: arcs,
-                trackColor: Theme.of(context).colorScheme.outlineVariant,
-                nowColor: Theme.of(context).colorScheme.onSurface,
-                nowOnColor: Theme.of(context).colorScheme.surface,
-                showNow: widget.showNow,
+    return AnimatedBuilder(
+      animation: _curve,
+      builder: (context, _) {
+        final arcs = _paintArcs(_displayed(_curve.value).values.toList());
+        final scheme = Theme.of(context).colorScheme;
+        final clockSize = Size(widget.size, widget.size);
+        _ArcGeom? moving;
+        if (_isMoving) {
+          for (final arc in arcs) {
+            if (arc.id == _activeId) {
+              moving = arc;
+              break;
+            }
+          }
+        }
+        if (moving != null) {
+          final laid = PolarClockPainter.layoutMoveChips(clockSize, moving);
+          _moveChips = (start: laid.start, end: laid.end);
+        } else {
+          _moveChips = null;
+        }
+        return SizedBox(
+          width: widget.size,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: widget.size,
+                height: widget.size,
+                child: _ArcHitTarget(
+                  arcs: arcs,
+                  moving: _isMoving,
+                  onTapId: _isMoving || widget.onTaskTap == null
+                      ? null
+                      : (id) {
+                          ScheduledTask? task;
+                          for (final t in widget.tasks) {
+                            if (t.id == id) {
+                              task = t;
+                              break;
+                            }
+                          }
+                          if (task != null) widget.onTaskTap!(task);
+                        },
+                  onLongPressId: !widget.enableMove || _isMoving
+                      ? null
+                      : _beginMove,
+                  onPointerDown: _onPointerDown,
+                  onPointerMove: _onPointerMove,
+                  onPointerUp: _onPointerUp,
+                  child: CustomPaint(
+                    size: clockSize,
+                    painter: PolarClockPainter(
+                      currentTime: widget.currentTime,
+                      arcs: arcs,
+                      trackColor: scheme.outlineVariant,
+                      nowColor: scheme.onSurface,
+                      nowOnColor: scheme.surface,
+                      showNow: widget.showNow,
+                      movingId: _activeId,
+                      handleFill: scheme.surface,
+                      handleRing: scheme.onSurface,
+                      moveChips: _moveChips,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          );
-        },
-      ),
+              if (_isMoving)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: _cancelMove,
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: scheme.onSurfaceVariant,
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: _commitMove,
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          minimumSize: const Size(0, 36),
+                        ),
+                        child: const Text('Save'),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -238,25 +652,38 @@ Map<String, _ArcGeom> _snapshot(
   List<ScheduledTask> tasks,
   TimeOfDay now, {
   bool fullColor = false,
+  String? draftId,
+  double? draftStart,
+  double? draftDuration,
 }) {
   final timed = polarTimedTasks(tasks);
-  final lanes = assignPolarTracks(timed);
+  const day = PolarClockPainter._minutesPerDay;
+  final ranges = timed.map((task) {
+    if (task.id == draftId && draftStart != null && draftDuration != null) {
+      final start = draftStart.round();
+      final end = (start + draftDuration.round()) % day;
+      return _TaskRange(task: task, start: start, end: end);
+    }
+    final start = task.startTime!.hour * 60 + task.startTime!.minute;
+    final end = task.endTime!.hour * 60 + task.endTime!.minute;
+    return _TaskRange(task: task, start: start, end: end);
+  }).toList();
+  final lanes = assignPolarTracksFromRanges(ranges);
   final laneCount = lanes.length.toDouble();
   final map = <String, _ArcGeom>{};
   for (final entry in lanes.entries) {
-    for (final task in entry.value) {
-      final start = task.startTime!.hour * 60 + task.startTime!.minute;
-      final end = task.endTime!.hour * 60 + task.endTime!.minute;
-      final duration =
-          start <= end ? end - start : PolarClockPainter._minutesPerDay - start + end;
+    for (final range in entry.value) {
+      final task = range.task;
+      final duration = _durationMinutes(range).toDouble();
+      if (duration < 0.4) continue;
       map[task.id] = _ArcGeom(
         id: task.id,
-        start: start.toDouble(),
-        duration: duration.toDouble(),
+        start: range.start.toDouble(),
+        duration: duration,
         color: task.color,
         opacity: fullColor || task.isUpcoming(now) ? 0.95 : 0.38,
         lane: entry.key.toDouble(),
-        laneCount: laneCount,
+        laneCount: math.max(1.0, laneCount),
       );
     }
   }
@@ -281,23 +708,34 @@ Map<int, List<ScheduledTask>> assignPolarTracks(
   List<ScheduledTask> tasks, {
   int? maxTracks,
 }) {
-  final taskRanges = tasks.map((task) {
+  final ranges = tasks.map((task) {
     final start = task.startTime!.hour * 60 + task.startTime!.minute;
     final end = task.endTime!.hour * 60 + task.endTime!.minute;
     return _TaskRange(task: task, start: start, end: end);
-  }).toList()
-    ..sort((a, b) {
-      final durationA = _durationMinutes(a);
-      final durationB = _durationMinutes(b);
-      final byDuration = durationB.compareTo(durationA);
+  }).toList();
+  return {
+    for (final entry in assignPolarTracksFromRanges(
+      ranges,
+      maxTracks: maxTracks,
+    ).entries)
+      entry.key: [for (final range in entry.value) range.task],
+  };
+}
+
+Map<int, List<_TaskRange>> assignPolarTracksFromRanges(
+  List<_TaskRange> taskRanges, {
+  int? maxTracks,
+}) {
+  final sorted = [...taskRanges]..sort((a, b) {
+      final byDuration = _durationMinutes(b).compareTo(_durationMinutes(a));
       if (byDuration != 0) return byDuration;
       return a.start.compareTo(b.start);
     });
 
-  final Map<int, List<ScheduledTask>> tracks = {};
+  final Map<int, List<_TaskRange>> tracks = {};
   final List<List<_TaskRange>> trackRanges = [];
 
-  for (final taskRange in taskRanges) {
+  for (final taskRange in sorted) {
     var trackIndex = -1;
     for (var i = 0; i < trackRanges.length; i++) {
       final overlaps = trackRanges[i].any(
@@ -319,7 +757,7 @@ Map<int, List<ScheduledTask>> assignPolarTracks(
     }
 
     trackRanges[trackIndex].add(taskRange);
-    tracks[trackIndex]!.add(taskRange.task);
+    tracks[trackIndex]!.add(taskRange);
   }
 
   return tracks;
@@ -356,17 +794,35 @@ bool _rangesOverlap(_TaskRange a, _TaskRange b) {
 
 class _ArcHitTarget extends SingleChildRenderObjectWidget {
   final List<_ArcGeom> arcs;
+  final bool moving;
   final ValueChanged<String>? onTapId;
+  final ValueChanged<String>? onLongPressId;
+  final ValueChanged<Offset>? onPointerDown;
+  final ValueChanged<Offset>? onPointerMove;
+  final VoidCallback? onPointerUp;
 
   const _ArcHitTarget({
     required this.arcs,
+    required this.moving,
     required this.onTapId,
+    required this.onLongPressId,
+    required this.onPointerDown,
+    required this.onPointerMove,
+    required this.onPointerUp,
     required super.child,
   });
 
   @override
   RenderObject createRenderObject(BuildContext context) {
-    return _RenderArcHit(arcs: arcs, onTapId: onTapId);
+    return _RenderArcHit(
+      arcs: arcs,
+      moving: moving,
+      onTapId: onTapId,
+      onLongPressId: onLongPressId,
+      onPointerDown: onPointerDown,
+      onPointerMove: onPointerMove,
+      onPointerUp: onPointerUp,
+    );
   }
 
   @override
@@ -376,29 +832,59 @@ class _ArcHitTarget extends SingleChildRenderObjectWidget {
   ) {
     renderObject
       ..arcs = arcs
-      ..onTapId = onTapId;
+      ..moving = moving
+      ..onTapId = onTapId
+      ..onLongPressId = onLongPressId
+      ..onPointerDown = onPointerDown
+      ..onPointerMove = onPointerMove
+      ..onPointerUp = onPointerUp;
   }
 }
 
 class _RenderArcHit extends RenderProxyBox {
   _RenderArcHit({
     required List<_ArcGeom> arcs,
+    required bool moving,
     required this.onTapId,
-  }) : _arcs = arcs;
+    required this.onLongPressId,
+    required this.onPointerDown,
+    required this.onPointerMove,
+    required this.onPointerUp,
+  })  : _arcs = arcs,
+        _moving = moving;
 
   List<_ArcGeom> _arcs;
+  bool _moving;
   ValueChanged<String>? onTapId;
+  ValueChanged<String>? onLongPressId;
+  ValueChanged<Offset>? onPointerDown;
+  ValueChanged<Offset>? onPointerMove;
+  VoidCallback? onPointerUp;
+
+  Timer? _longPress;
+  Offset? _down;
+  String? _downId;
+  bool _longFired = false;
+  int? _pointer;
 
   set arcs(List<_ArcGeom> value) {
     _arcs = value;
   }
 
+  set moving(bool value) {
+    _moving = value;
+  }
+
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
     if (!hasSize) return false;
-    if (onTapId == null || size == Size.zero || !size.contains(position)) {
-      return false;
+    if (size == Size.zero || !size.contains(position)) return false;
+    if (_moving) {
+      result.add(BoxHitTestEntry(this, position));
+      return true;
     }
+    final canInteract = onTapId != null || onLongPressId != null;
+    if (!canInteract) return false;
     if (!_containsArc(position)) return false;
     result.add(BoxHitTestEntry(this, position));
     return true;
@@ -406,10 +892,50 @@ class _RenderArcHit extends RenderProxyBox {
 
   @override
   void handleEvent(PointerEvent event, covariant HitTestEntry entry) {
-    if (event is PointerUpEvent && onTapId != null) {
-      final id = _idAt(event.localPosition);
-      if (id != null) onTapId!(id);
+    if (event is PointerDownEvent) {
+      _pointer = event.pointer;
+      _down = event.localPosition;
+      _downId = _idAt(_down!);
+      _longFired = false;
+      _longPress?.cancel();
+      if (_moving) {
+        onPointerDown?.call(event.localPosition);
+      } else if (_downId != null && onLongPressId != null) {
+        _longPress = Timer(const Duration(milliseconds: 450), () {
+          _longFired = true;
+          onLongPressId!(_downId!);
+          if (_down != null) onPointerDown?.call(_down!);
+        });
+      }
+    } else if (event is PointerMoveEvent && event.pointer == _pointer) {
+      if (!_longFired &&
+          !_moving &&
+          _down != null &&
+          (event.localPosition - _down!).distance > 14) {
+        _longPress?.cancel();
+      }
+      if (_moving || _longFired) {
+        onPointerMove?.call(event.localPosition);
+      }
+    } else if (event is PointerUpEvent && event.pointer == _pointer) {
+      _longPress?.cancel();
+      if (_moving || _longFired) {
+        onPointerUp?.call();
+      } else if (_downId != null && !_longFired) {
+        onTapId?.call(_downId!);
+      }
+      _pointer = null;
+    } else if (event is PointerCancelEvent && event.pointer == _pointer) {
+      _longPress?.cancel();
+      _pointer = null;
+      if (_moving) onPointerUp?.call();
     }
+  }
+
+  @override
+  void dispose() {
+    _longPress?.cancel();
+    super.dispose();
   }
 
   bool _containsArc(Offset position) => _idAt(position) != null;
@@ -420,6 +946,7 @@ class _RenderArcHit extends RenderProxyBox {
 }
 
 class _PolarMetrics {
+  final double holeRadius;
   final double hourTrackWidth;
   final double hourTrackRadius;
   final double tracksInner;
@@ -429,6 +956,7 @@ class _PolarMetrics {
   final double tipRadius;
 
   const _PolarMetrics({
+    required this.holeRadius,
     required this.hourTrackWidth,
     required this.hourTrackRadius,
     required this.tracksInner,
@@ -450,6 +978,7 @@ class _PolarMetrics {
     final capPad = tipRadius + 1.6;
     final tracksOuter = maxRadius - capPad;
     return _PolarMetrics(
+      holeRadius: holeRadius,
       hourTrackWidth: hourTrackWidth,
       hourTrackRadius: hourTrackRadius,
       tracksInner: tracksInner,
@@ -470,6 +999,10 @@ class PolarClockPainter extends CustomPainter {
   final Color nowColor;
   final Color nowOnColor;
   final bool showNow;
+  final String? movingId;
+  final Color handleFill;
+  final Color handleRing;
+  final ({Rect start, Rect end})? moveChips;
 
   PolarClockPainter({
     required this.currentTime,
@@ -478,6 +1011,10 @@ class PolarClockPainter extends CustomPainter {
     required this.nowColor,
     required this.nowOnColor,
     this.showNow = true,
+    this.movingId,
+    this.handleFill = Colors.white,
+    this.handleRing = Colors.black,
+    this.moveChips,
   });
 
   /// Midnight at 9 o'clock (left), sweeping clockwise.
@@ -526,6 +1063,116 @@ class PolarClockPainter extends CustomPainter {
     return null;
   }
 
+  static ({double inner, double outer, double mid}) bandFor(
+    _ArcGeom arc,
+    Size size,
+  ) {
+    final m = _PolarMetrics.of(size);
+    final n = math.max(1.0, arc.laneCount);
+    final gap = n > 1
+        ? math.min(2.5, (m.tracksOuter - m.tracksInner) * 0.015)
+        : 0.0;
+    final trackWidth =
+        ((m.tracksOuter - m.tracksInner) - gap * (n - 1)) / n;
+    final inner = m.tracksInner + arc.lane * (trackWidth + gap);
+    final outer = inner + trackWidth;
+    return (inner: inner, outer: outer, mid: inner + trackWidth / 2);
+  }
+
+  static Offset pointAt(Size size, double radius, double minutes) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final angle = angleForMinutes(minutes);
+    return Offset(
+      center.dx + radius * math.cos(angle),
+      center.dy + radius * math.sin(angle),
+    );
+  }
+
+  static double _moveHandleRadius(({double inner, double outer, double mid}) band) {
+    return math.max(5.0, math.min(7.5, (band.outer - band.inner) * 0.28));
+  }
+
+  static Rect startTimeChipRect(Size size, _ArcGeom arc) {
+    return layoutMoveChips(size, arc).start;
+  }
+
+  static Rect endTimeChipRect(Size size, _ArcGeom arc) {
+    return layoutMoveChips(size, arc).end;
+  }
+
+  /// Labels sit on the handle's polar angle. Outer-half tracks place the chip
+  /// toward the center; inner-half tracks place it outward. Offset is the
+  /// handle radius plus the chip width so the label circle clears the grabber.
+  static ({Rect start, Rect end}) layoutMoveChips(Size size, _ArcGeom arc) {
+    final band = bandFor(arc, size);
+    final metrics = _PolarMetrics.of(size);
+    final handleVisualR = _moveHandleRadius(band) + 2;
+    final midR = (metrics.tracksInner + metrics.tracksOuter) / 2;
+    final inward = band.mid > midR;
+    final startPt = pointAt(size, band.mid, arc.start);
+    final endMin = (arc.start + arc.duration) % _minutesPerDay;
+    final endPt = pointAt(size, band.mid, endMin);
+    return (
+      start: _chipFromHandle(
+        size: size,
+        handle: startPt,
+        minutes: arc.start,
+        handleVisualR: handleVisualR,
+        inward: inward,
+      ),
+      end: _chipFromHandle(
+        size: size,
+        handle: endPt,
+        minutes: endMin,
+        handleVisualR: handleVisualR,
+        inward: inward,
+      ),
+    );
+  }
+
+  static Rect _chipFromHandle({
+    required Size size,
+    required Offset handle,
+    required double minutes,
+    required double handleVisualR,
+    required bool inward,
+  }) {
+    final painter = _timeChipPainter(minutes);
+    final chipW = painter.width + _chipPadX * 2;
+    final chipH = painter.height + _chipPadY * 2;
+    final clock = Offset(size.width / 2, size.height / 2);
+    var radial = handle - clock;
+    radial = radial.distance < 1 ? const Offset(0, 1) : radial / radial.distance;
+    final dir = inward ? -radial : radial;
+    final center = handle + dir * (handleVisualR + chipW / 2);
+    return Rect.fromCenter(center: center, width: chipW, height: chipH);
+  }
+
+
+  static const _chipFontSize = 13.5;
+  static const _chipPadX = 8.0;
+  static const _chipPadY = 5.5;
+
+  static TextPainter _timeChipPainter(double minutes, {Color? color}) {
+    final time = timeFromMinutes(minutes.round());
+    final hour =
+        time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.hour >= 12 ? 'PM' : 'AM';
+    return TextPainter(
+      text: TextSpan(
+        text: '$hour:$minute $period',
+        style: TextStyle(
+          color: color ?? const Color(0xE6000000),
+          fontSize: _chipFontSize,
+          fontWeight: FontWeight.w600,
+          height: 1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final m = _PolarMetrics.of(size);
@@ -554,6 +1201,52 @@ class PolarClockPainter extends CustomPainter {
         m.tipRadius,
       );
     }
+
+    if (movingId != null) {
+      _drawMovingBorder(canvas, size);
+      _drawMoveHandles(canvas, size);
+    }
+  }
+
+  void _drawMovingBorder(Canvas canvas, Size size) {
+    _ArcGeom? moving;
+    for (final arc in arcs) {
+      if (arc.id == movingId) {
+        moving = arc;
+        break;
+      }
+    }
+    if (moving == null) return;
+    final m = _PolarMetrics.of(size);
+    final center = Offset(size.width / 2, size.height / 2);
+    final n = math.max(1.0, moving.laneCount);
+    final gap = n > 1
+        ? math.min(2.5, (m.tracksOuter - m.tracksInner) * 0.015)
+        : 0.0;
+    final trackWidth =
+        ((m.tracksOuter - m.tracksInner) - gap * (n - 1)) / n;
+    final innerEdge = m.tracksInner + moving.lane * (trackWidth + gap);
+    final radius = innerEdge + trackWidth / 2;
+    final startAngle = _angleForMinutes(moving.start);
+    final sweepAngle = (moving.duration / _minutesPerDay) * 2 * math.pi;
+    if (sweepAngle < 0.004) return;
+    final path = _roundedTrackPath(
+      center,
+      radius,
+      trackWidth,
+      startAngle,
+      sweepAngle,
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = const Color(0xFFFFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round
+        ..isAntiAlias = true,
+    );
   }
 
   void _drawHourTrack(
@@ -743,6 +1436,68 @@ class PolarClockPainter extends CustomPainter {
     canvas.restore();
   }
 
+  void _drawMoveHandles(Canvas canvas, Size size) {
+    _ArcGeom? moving;
+    for (final arc in arcs) {
+      if (arc.id == movingId) {
+        moving = arc;
+        break;
+      }
+    }
+    if (moving == null) return;
+    final band = bandFor(moving, size);
+    final endMin = (moving.start + moving.duration) % _minutesPerDay;
+    final startPt = pointAt(size, band.mid, moving.start);
+    final endPt = pointAt(size, band.mid, endMin);
+    final r = _moveHandleRadius(band);
+    final laid = layoutMoveChips(size, moving);
+    final chips = moveChips ?? (start: laid.start, end: laid.end);
+    _drawTimeChip(canvas, chips.start, moving.start);
+    _drawTimeChip(canvas, chips.end, endMin);
+    _drawHandle(canvas, startPt, r);
+    _drawHandle(canvas, endPt, r);
+  }
+
+  void _drawHandle(Canvas canvas, Offset center, double radius) {
+    canvas.drawCircle(
+      center,
+      radius + 2,
+      Paint()..color = handleRing.withValues(alpha: 0.9),
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()..color = handleFill,
+    );
+    canvas.drawCircle(
+      center,
+      radius * 0.38,
+      Paint()..color = handleRing.withValues(alpha: 0.85),
+    );
+  }
+
+  void _drawTimeChip(Canvas canvas, Rect rect, double minutes) {
+    final painter = _timeChipPainter(
+      minutes,
+      color: handleRing.withValues(alpha: 0.92),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(8)),
+      Paint()..color = handleFill.withValues(alpha: 0.94),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(8)),
+      Paint()
+        ..color = handleRing.withValues(alpha: 0.18)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    painter.paint(
+      canvas,
+      Offset(rect.left + _chipPadX, rect.top + _chipPadY),
+    );
+  }
+
   @override
   bool shouldRepaint(PolarClockPainter oldDelegate) {
     return oldDelegate.currentTime != currentTime ||
@@ -750,7 +1505,11 @@ class PolarClockPainter extends CustomPainter {
         oldDelegate.trackColor != trackColor ||
         oldDelegate.nowColor != nowColor ||
         oldDelegate.nowOnColor != nowOnColor ||
-        oldDelegate.showNow != showNow;
+        oldDelegate.showNow != showNow ||
+        oldDelegate.movingId != movingId ||
+        oldDelegate.handleFill != handleFill ||
+        oldDelegate.handleRing != handleRing ||
+        oldDelegate.moveChips != moveChips;
   }
 }
 

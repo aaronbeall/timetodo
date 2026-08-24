@@ -9,6 +9,7 @@ import 'package:timetodo/models/task.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/screens/settings_screen.dart';
+import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_list_item.dart';
 import 'package:timetodo/widgets/add_task_dialog.dart';
@@ -34,6 +35,7 @@ class _TodayScreenState extends State<TodayScreen> {
 
   TimeOfDay _currentTime = TimeOfDay.now();
   DateTime _currentDate = DateTime.now();
+  String? _movingTaskId;
   final _scrollController = ScrollController();
   final _fanKey = GlobalKey();
   final _fanT = ValueNotifier(0.0);
@@ -82,6 +84,7 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   void _onBodyPointerSignal(PointerSignalEvent event) {
+    if (_movingTaskId != null) return;
     if (event is! PointerScrollEvent) return;
     if (!_scrollController.hasClients) return;
     GestureBinding.instance.pointerSignalResolver.register(event, (resolved) {
@@ -91,6 +94,7 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   void _onClockDragUpdate(DragUpdateDetails details) {
+    if (_movingTaskId != null) return;
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
     pos.jumpTo(
@@ -274,12 +278,44 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   void _showSummary(ScheduledTask task) {
+    final canMove = !task.isAllDay &&
+        task.startTime != null &&
+        task.endTime != null;
     showTaskSummarySheet(
       context,
       task: task,
       now: _currentTime,
       onEdit: () => widget.onEditTask?.call(task.task),
+      onMove: canMove
+          ? () {
+              setState(() => _movingTaskId = task.id);
+              _scrollToTop();
+            }
+          : null,
     );
+  }
+
+  void _commitMovedTimes(ScheduledTask task, TimeOfDay start, TimeOfDay end) {
+    final undo = context.read<TaskProvider>().commitOccurrenceEdits(
+          taskId: task.id,
+          day: dateOnly(task.date),
+          writeTimes: true,
+          isAllDay: false,
+          startTime: start,
+          endTime: end,
+          writeStatus: false,
+          isCompleted: false,
+          isCanceled: false,
+          applyFollowing: false,
+        );
+    setState(() => _movingTaskId = null);
+    if (undo != null) {
+      showChangeToast(
+        context,
+        message: 'Moved ${task.label}',
+        onUndo: undo,
+      );
+    }
   }
 
   int _startMinutes(ScheduledTask task) {
@@ -425,7 +461,9 @@ class _TodayScreenState extends State<TodayScreen> {
               );
               const frameInset = 5.0;
               const pipPad = 12.0;
-              final spacerHeight = maxClock + 16;
+              final spacerHeight = maxClock +
+                  16 +
+                  (_movingTaskId != null ? PolarClock.moveActionsExtent : 0);
               final hasConnector =
                   (active.isNotEmpty || allDayOpen.isNotEmpty) &&
                       fanTasks.isNotEmpty;
@@ -469,7 +507,9 @@ class _TodayScreenState extends State<TodayScreen> {
                     children: [
                       CustomScrollView(
                         controller: _scrollController,
-                        physics: const AlwaysScrollableScrollPhysics(),
+                        physics: _movingTaskId != null
+                            ? const NeverScrollableScrollPhysics()
+                            : const AlwaysScrollableScrollPhysics(),
                         slivers: [
                           SliverToBoxAdapter(
                             child: SizedBox(height: spacerHeight),
@@ -590,9 +630,11 @@ class _TodayScreenState extends State<TodayScreen> {
                                       ),
                                       child: SizedBox(
                                         width: size,
-                                        height: size,
+                                        height: _movingTaskId == null
+                                            ? size
+                                            : null,
                                         child: Stack(
-                                          alignment: Alignment.center,
+                                          alignment: Alignment.topCenter,
                                           children: [
                                             PolarClock(
                                               currentTime: _currentTime,
@@ -601,12 +643,34 @@ class _TodayScreenState extends State<TodayScreen> {
                                               onTaskTap: docked
                                                   ? null
                                                   : _showSummary,
+                                              enableMove: !docked ||
+                                                  _movingTaskId != null,
+                                              movingTaskId: _movingTaskId,
+                                              onMoveStart: (task) {
+                                                setState(
+                                                  () => _movingTaskId =
+                                                      task.id,
+                                                );
+                                                _scrollToTop();
+                                              },
+                                              onMoveCancel: () => setState(
+                                                () => _movingTaskId = null,
+                                              ),
+                                              onMoveCommit: _commitMovedTimes,
                                             ),
-                                            IgnorePointer(
-                                              child: Transform.scale(
-                                                scale: timeScale,
-                                                child: _buildClockCenter(
-                                                  context,
+                                            Positioned(
+                                              top: 0,
+                                              left: 0,
+                                              right: 0,
+                                              height: size,
+                                              child: IgnorePointer(
+                                                child: Center(
+                                                  child: Transform.scale(
+                                                    scale: timeScale,
+                                                    child: _buildClockCenter(
+                                                      context,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
@@ -622,7 +686,9 @@ class _TodayScreenState extends State<TodayScreen> {
                             top: top,
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onVerticalDragUpdate: _onClockDragUpdate,
+                              onVerticalDragUpdate: _movingTaskId != null
+                                  ? null
+                                  : _onClockDragUpdate,
                               onTap: docked ? _scrollToTop : null,
                               child: clockFace,
                             ),

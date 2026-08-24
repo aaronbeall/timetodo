@@ -10,6 +10,7 @@ class TaskTimeframeField extends StatelessWidget {
   final bool showAllDayToggle;
   final bool showTrailingTimeIcon;
   final bool leadingIcons;
+  final VoidCallback? onMove;
 
   const TaskTimeframeField({
     super.key,
@@ -21,6 +22,7 @@ class TaskTimeframeField extends StatelessWidget {
     this.showAllDayToggle = true,
     this.showTrailingTimeIcon = true,
     this.leadingIcons = false,
+    this.onMove,
   });
 
   @override
@@ -47,6 +49,19 @@ class TaskTimeframeField extends StatelessWidget {
               label: 'Timeframe',
               value: _rangeLabel(context),
               onTap: () => _pickTimeframe(context),
+              action: onMove == null
+                  ? null
+                  : FilledButton.tonalIcon(
+                      onPressed: onMove,
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.open_with_rounded, size: 16),
+                      label: const Text('Move'),
+                    ),
             ),
             if (duration != null)
               _iconRow(
@@ -103,32 +118,53 @@ class TaskTimeframeField extends StatelessWidget {
     required String label,
     required String value,
     required VoidCallback onTap,
+    Widget? action,
   }) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: muted),
-            const SizedBox(width: 10),
-            Expanded(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 18, color: muted),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (action != null) action,
+          InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
               child: Text(
-                label,
-                style: theme.textTheme.bodyLarge?.copyWith(color: muted),
+                value,
+                textAlign: TextAlign.end,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-            Text(
-              value,
-              style: TextStyle(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

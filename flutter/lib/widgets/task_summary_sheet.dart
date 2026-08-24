@@ -16,9 +16,11 @@ Future<void> showTaskSummarySheet(
   required ScheduledTask task,
   required TimeOfDay now,
   required VoidCallback onEdit,
+  VoidCallback? onMove,
 }) async {
   final draft = _OccurrenceDraft.from(task, now);
   var openParent = false;
+  var startMove = false;
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -32,10 +34,20 @@ Future<void> showTaskSummarySheet(
           openParent = true;
           Navigator.of(sheetContext).pop();
         },
+        onMove: onMove == null
+            ? null
+            : () {
+                startMove = true;
+                Navigator.of(sheetContext).pop();
+              },
       );
     },
   );
   if (!context.mounted) return;
+  if (startMove) {
+    onMove?.call();
+    return;
+  }
   final undo = _commitDraft(context, task, draft);
   if (openParent) onEdit();
   if (undo != null) {
@@ -55,6 +67,8 @@ class _OccurrenceDraft {
 
   final TimeOfDay? initialStart;
   final TimeOfDay? initialEnd;
+  final TimeOfDay? seriesStart;
+  final TimeOfDay? seriesEnd;
   final _StatusChoice initialStatus;
 
   _OccurrenceDraft({
@@ -63,23 +77,31 @@ class _OccurrenceDraft {
     required this.status,
     required this.initialStart,
     required this.initialEnd,
+    required this.seriesStart,
+    required this.seriesEnd,
     required this.initialStatus,
   });
 
   factory _OccurrenceDraft.from(ScheduledTask task, TimeOfDay now) {
     final status = _statusOf(task, now);
+    final era = task.era;
     return _OccurrenceDraft(
       startTime: task.startTime,
       endTime: task.endTime,
       status: status,
       initialStart: task.startTime,
       initialEnd: task.endTime,
+      seriesStart: era.startTime,
+      seriesEnd: era.endTime,
       initialStatus: status,
     );
   }
 
   bool get timesChanged =>
       startTime != initialStart || endTime != initialEnd;
+
+  bool get differsFromSeries =>
+      startTime != seriesStart || endTime != seriesEnd;
 
   bool get statusChanged => status != initialStatus;
 
@@ -149,12 +171,14 @@ class _TaskSummarySheet extends StatefulWidget {
   final TimeOfDay now;
   final _OccurrenceDraft draft;
   final VoidCallback onEditParent;
+  final VoidCallback? onMove;
 
   const _TaskSummarySheet({
     required this.task,
     required this.now,
     required this.draft,
     required this.onEditParent,
+    this.onMove,
   });
 
   @override
@@ -293,11 +317,16 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                   showAllDayToggle: false,
                   showTrailingTimeIcon: false,
                   leadingIcons: true,
+                  onMove: widget.onMove != null &&
+                          draft.startTime != null &&
+                          draft.endTime != null
+                      ? widget.onMove
+                      : null,
                   onTimeframeChanged: (range) {
                     setState(() {
                       draft.startTime = range.$1;
                       draft.endTime = range.$2;
-                      if (!draft.timesChanged) {
+                      if (!draft.differsFromSeries) {
                         draft.applyFollowing = false;
                       }
                     });
@@ -334,7 +363,7 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
               const SizedBox(height: 18),
               if (canEditTimes)
                 FilledButton.tonalIcon(
-                  onPressed: draft.timesChanged
+                  onPressed: draft.differsFromSeries
                       ? () {
                           setState(
                             () => draft.applyFollowing = !draft.applyFollowing,
@@ -357,7 +386,7 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                       : null,
                 ),
               if (canEditTimes) const SizedBox(height: 8),
-              OutlinedButton.icon(
+              FilledButton.tonalIcon(
                 onPressed: widget.onEditParent,
                 icon: const Icon(Icons.edit_outlined),
                 label: const Text('Edit task'),
@@ -427,18 +456,20 @@ class _StatusRow extends StatelessWidget {
             style: theme.textTheme.bodyLarge?.copyWith(color: color),
           ),
         ),
-        for (final action in actions)
-          TextButton.icon(
+        for (final action in actions) ...[
+          if (action != actions.first) const SizedBox(width: 6),
+          FilledButton.tonalIcon(
             onPressed: () => onSelect(action.value),
             icon: Icon(_statusIcon(action.value), size: 18),
             label: Text(action.label),
-            style: TextButton.styleFrom(
+            style: FilledButton.styleFrom(
               visualDensity: VisualDensity.compact,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              foregroundColor: theme.colorScheme.primary,
+              padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
+              minimumSize: const Size(0, 32),
             ),
           ),
+        ],
       ],
     );
   }

@@ -53,8 +53,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _focus = DateTime.now();
   late DateTime _pageOrigin;
   late PageController _pager;
+  String? _movingTaskId;
+  final _bodyScroll = ScrollController();
 
   DateTime get _today => dateOnly(DateTime.now());
+
+  void _scrollToClock() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_bodyScroll.hasClients) return;
+      _bodyScroll.animateTo(
+        0,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
 
   @override
   void initState() {
@@ -74,6 +87,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   void dispose() {
     _pager.dispose();
+    _bodyScroll.dispose();
     super.dispose();
   }
 
@@ -362,8 +376,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     List<ScheduledTask> tasks, {
     required double size,
     required DateTime day,
+    bool enableMove = false,
   }) {
     final isToday = isSameDay(day, DateTime.now());
+    final canMove = enableMove && !dateOnly(day).isBefore(_today);
     return PolarClock(
       currentTime: isToday ? TimeOfDay.now() : const TimeOfDay(hour: 0, minute: 0),
       tasks: tasks,
@@ -371,7 +387,38 @@ class _CalendarScreenState extends State<CalendarScreen> {
       animate: false,
       showNow: isToday,
       onTaskTap: _showOccurrence,
+      enableMove: canMove,
+      movingTaskId: canMove ? _movingTaskId : null,
+      onMoveStart: (task) {
+        setState(() => _movingTaskId = task.id);
+        _scrollToClock();
+      },
+      onMoveCancel: () => setState(() => _movingTaskId = null),
+      onMoveCommit: _commitMovedTimes,
     );
+  }
+
+  void _commitMovedTimes(ScheduledTask task, TimeOfDay start, TimeOfDay end) {
+    final undo = context.read<TaskProvider>().commitOccurrenceEdits(
+          taskId: task.id,
+          day: dateOnly(task.date),
+          writeTimes: true,
+          isAllDay: false,
+          startTime: start,
+          endTime: end,
+          writeStatus: false,
+          isCompleted: false,
+          isCanceled: false,
+          applyFollowing: false,
+        );
+    setState(() => _movingTaskId = null);
+    if (undo != null) {
+      showChangeToast(
+        context,
+        message: 'Moved ${task.label}',
+        onUndo: undo,
+      );
+    }
   }
 
   Widget _polarWithTime(
@@ -379,16 +426,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required double size,
     required DateTime day,
   }) {
-    final polar = _polar(tasks, size: size, day: day);
+    final polar = _polar(tasks, size: size, day: day, enableMove: true);
     if (!isSameDay(day, _today)) return polar;
     return SizedBox(
       width: size,
-      height: size,
       child: Stack(
-        alignment: Alignment.center,
+        alignment: Alignment.topCenter,
         children: [
           polar,
-          IgnorePointer(child: _nowHubLabel(size)),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: size,
+            child: IgnorePointer(child: Center(child: _nowHubLabel(size))),
+          ),
         ],
       ),
     );
@@ -427,11 +479,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _showOccurrence(ScheduledTask task) {
+    final day = dateOnly(task.date);
+    final canMove = !task.isAllDay &&
+        task.startTime != null &&
+        task.endTime != null &&
+        !day.isBefore(_today);
     showTaskSummarySheet(
       context,
       task: task,
       now: TimeOfDay.now(),
       onEdit: () => widget.onEditTask?.call(task.task),
+      onMove: canMove
+          ? () {
+              setState(() => _movingTaskId = task.id);
+              _scrollToClock();
+            }
+          : null,
     );
   }
 
@@ -449,6 +512,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
               final polarSize =
                   (constraints.maxWidth - 48).clamp(160.0, 280.0);
               return ListView(
+                controller: _bodyScroll,
+                physics: _movingTaskId != null
+                    ? const NeverScrollableScrollPhysics()
+                    : const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 children: [
                   Center(
@@ -578,6 +645,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
               final polarSize =
                   (constraints.maxWidth - 48).clamp(160.0, 280.0);
               return SingleChildScrollView(
+                controller: _bodyScroll,
+                physics: _movingTaskId != null
+                    ? const NeverScrollableScrollPhysics()
+                    : const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
                 child: Column(
                   children: [
