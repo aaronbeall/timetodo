@@ -9,14 +9,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
-import { supabase, Task } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase, Task } from '@/lib/supabase';
+import {
+  createDemoTasks,
+  createLocalTask,
+  getLocalDateKey,
+  isDemoMode,
+} from '@/lib/demoTasks';
 import TaskListItem from '@/components/TaskListItem';
 import NewTaskModal from '@/components/NewTaskModal';
 
 export default function TasksScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(() => createDemoTasks());
   const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
+  const [usingDemoData, setUsingDemoData] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
 
@@ -29,18 +36,28 @@ export default function TasksScreen() {
   }, [selectedDate, tasks]);
 
   const loadTasks = async () => {
+    if (isDemoMode || !isSupabaseConfigured) {
+      setTasks(createDemoTasks());
+      setUsingDemoData(true);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('tasks')
       .select('*')
       .order('start_time');
 
-    if (!error && data) {
+    if (!error && data?.length) {
       setTasks(data);
+      setUsingDemoData(false);
+    } else {
+      setTasks(createDemoTasks());
+      setUsingDemoData(true);
     }
   };
 
   const filterTasksForDate = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = getLocalDateKey(date);
     const dayOfWeek = date.getDay();
 
     const filtered = tasks.filter((task) => {
@@ -97,16 +114,47 @@ export default function TasksScreen() {
   };
 
   const handleDeleteTask = async (taskId: string) => {
+    if (usingDemoData) {
+      setTasks((currentTasks) =>
+        currentTasks.filter((task) => task.id !== taskId)
+      );
+      return;
+    }
+
     await supabase.from('tasks').delete().eq('id', taskId);
     loadTasks();
   };
 
   const handleTogglePause = async (taskId: string, isPaused: boolean) => {
+    if (usingDemoData) {
+      setTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          task.id === taskId ? { ...task, is_paused: !isPaused } : task
+        )
+      );
+      return;
+    }
+
     await supabase.from('tasks').update({ is_paused: !isPaused }).eq('id', taskId);
     loadTasks();
   };
 
   const handleSaveTask = async (taskData: Partial<Task>) => {
+    if (usingDemoData) {
+      setTasks((currentTasks) =>
+        editingTask?.id
+          ? currentTasks.map((task) =>
+              task.id === editingTask.id
+                ? { ...task, ...taskData, updated_at: new Date().toISOString() }
+                : task
+            )
+          : [...currentTasks, createLocalTask(taskData)]
+      );
+      setModalVisible(false);
+      setEditingTask(undefined);
+      return;
+    }
+
     if (editingTask?.id) {
       await supabase
         .from('tasks')

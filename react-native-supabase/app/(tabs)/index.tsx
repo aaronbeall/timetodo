@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus } from 'lucide-react-native';
-import { supabase, Task } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase, Task } from '@/lib/supabase';
+import { createDemoTasks, createLocalTask, isDemoMode } from '@/lib/demoTasks';
 import RadialClock from '@/components/RadialClock';
 import TaskArcs from '@/components/TaskArcs';
 import ActiveTasksList from '@/components/ActiveTasksList';
@@ -17,8 +18,9 @@ import NewTaskModal from '@/components/NewTaskModal';
 
 export default function TimerScreen() {
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(() => createDemoTasks());
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
+  const [usingDemoData, setUsingDemoData] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
@@ -34,6 +36,12 @@ export default function TimerScreen() {
   useEffect(() => {
     const active = tasks.filter((task) => {
       if (task.is_paused || task.is_completed) return false;
+      if (
+        task.snoozed_until &&
+        currentTime.getTime() < new Date(task.snoozed_until).getTime()
+      ) {
+        return false;
+      }
 
       const currentMinutes =
         currentTime.getHours() * 60 + currentTime.getMinutes();
@@ -50,18 +58,39 @@ export default function TimerScreen() {
   }, [currentTime, tasks]);
 
   const loadTasks = async () => {
+    if (isDemoMode || !isSupabaseConfigured) {
+      setTasks(createDemoTasks());
+      setUsingDemoData(true);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('tasks')
       .select('*')
       .order('start_time');
 
-    if (!error && data) {
+    if (!error && data?.length) {
       setTasks(data);
+      setUsingDemoData(false);
+    } else {
+      setTasks(createDemoTasks());
+      setUsingDemoData(true);
     }
   };
 
   const handleSnooze = async (taskId: string) => {
     const snoozeUntil = new Date(currentTime.getTime() + 15 * 60 * 1000);
+    if (usingDemoData) {
+      setTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          task.id === taskId
+            ? { ...task, snoozed_until: snoozeUntil.toISOString() }
+            : task
+        )
+      );
+      return;
+    }
+
     await supabase
       .from('tasks')
       .update({ snoozed_until: snoozeUntil.toISOString() })
@@ -70,6 +99,15 @@ export default function TimerScreen() {
   };
 
   const handleComplete = async (taskId: string) => {
+    if (usingDemoData) {
+      setTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          task.id === taskId ? { ...task, is_completed: true } : task
+        )
+      );
+      return;
+    }
+
     await supabase
       .from('tasks')
       .update({ is_completed: true })
@@ -78,6 +116,12 @@ export default function TimerScreen() {
   };
 
   const handleCreateTask = async (taskData: Partial<Task>) => {
+    if (usingDemoData) {
+      setTasks((currentTasks) => [...currentTasks, createLocalTask(taskData)]);
+      setModalVisible(false);
+      return;
+    }
+
     await supabase.from('tasks').insert([taskData]);
     loadTasks();
     setModalVisible(false);

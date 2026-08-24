@@ -2,6 +2,8 @@
 
 A beautiful and intuitive mobile app for managing your daily tasks with a unique polar clock visualization.
 
+![TimeToDo feature prototype with seeded demo tasks](./docs/demo.jpg)
+
 ## Features
 
 ### Today Screen
@@ -29,9 +31,8 @@ A beautiful and intuitive mobile app for managing your daily tasks with a unique
 ## Getting Started
 
 ### Prerequisites
-- Node.js (v14 or higher)
+- Node.js 18 or higher
 - npm or yarn
-- Expo CLI (`npm install -g expo-cli`)
 
 ### Installation
 
@@ -45,14 +46,22 @@ npm install
 npm start
 ```
 
+To run the browser version directly:
+
+```bash
+npm run web
+```
+
 3. Run on your device:
    - Scan the QR code with Expo Go app (iOS/Android)
    - Or press `i` for iOS simulator / `a` for Android emulator
 
+On a fresh install, the app seeds a small set of local demo tasks so the Today and Tasks screens are immediately populated. Changes are stored on-device with AsyncStorage.
+
 ## Project Structure
 
 ```
-cursor/
+react-native-feature-prototype/
 ├── App.js                 # Main app component with navigation
 ├── src/
 │   ├── components/
@@ -90,4 +99,3 @@ Each task supports:
 ## License
 
 MIT
-

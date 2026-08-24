@@ -2,6 +2,7 @@ import { View, StyleSheet } from 'react-native';
 import Svg, { Path, G } from 'react-native-svg';
 import { Task } from '@/lib/supabase';
 import { ReactElement } from 'react';
+import { getLocalDateKey } from '@/lib/demoTasks';
 
 interface TaskArcsProps {
   tasks: Task[];
@@ -19,7 +20,7 @@ export default function TaskArcs({
   const ringThickness = 24;
 
   const getTasksForToday = () => {
-    const today = currentTime.toISOString().split('T')[0];
+    const today = getLocalDateKey(currentTime);
     const dayOfWeek = currentTime.getDay();
 
     return tasks.filter((task) => {

@@ -1,16 +1,31 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createDemoTasks } from '../data/demoTasks';
 import { Task } from '../models/Task';
 
 const TASKS_KEY = '@timetodo:tasks';
+const DEMO_SEEDED_KEY = '@timetodo:demo-seeded';
 
 export const loadTasks = async () => {
   try {
-    const jsonValue = await AsyncStorage.getItem(TASKS_KEY);
-    if (jsonValue != null) {
-      const tasks = JSON.parse(jsonValue);
-      return tasks.map(t => Task.fromJSON(t));
+    const [jsonValue, demoSeeded] = await Promise.all([
+      AsyncStorage.getItem(TASKS_KEY),
+      AsyncStorage.getItem(DEMO_SEEDED_KEY),
+    ]);
+    const tasks = jsonValue ? JSON.parse(jsonValue).map(t => Task.fromJSON(t)) : [];
+
+    if (tasks.length === 0 && demoSeeded !== 'true') {
+      const demoTasks = createDemoTasks();
+      await Promise.all([
+        AsyncStorage.setItem(
+          TASKS_KEY,
+          JSON.stringify(demoTasks.map(task => task.toJSON()))
+        ),
+        AsyncStorage.setItem(DEMO_SEEDED_KEY, 'true'),
+      ]);
+      return demoTasks;
     }
-    return [];
+
+    return tasks;
   } catch (e) {
     console.error('Error loading tasks:', e);
     return [];
@@ -88,4 +103,3 @@ export const getTasksForDate = async (date) => {
     return false;
   });
 };
-
