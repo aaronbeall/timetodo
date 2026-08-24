@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View } from 'react-native';
 import Svg, { Circle, Path, G } from 'react-native-svg';
 import { colors } from '../theme';
 import type { Task } from '../types';
@@ -204,7 +204,3 @@ export function RadialClock({
     </View>
   );
 }
-
-const styles = StyleSheet.create({});
-
-

@@ -7,9 +7,11 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { createDemoTasks } from '../data/demoTasks';
 import type { Task } from '../types';
 
 const STORAGE_KEY = 'timetodo.tasks.v1';
+const DEMO_SEEDED_KEY = 'timetodo.demoSeeded.v1';
 
 type TaskMap = Record<string, Task>;
 
@@ -33,26 +35,39 @@ export const TaskProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [tasks, setTasks] = useState<TaskMap>({});
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed: TaskMap = JSON.parse(raw);
+        const [raw, demoSeeded] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEY),
+          AsyncStorage.getItem(DEMO_SEEDED_KEY),
+        ]);
+        const parsed: TaskMap = raw ? JSON.parse(raw) : {};
+        const shouldSeedDemo =
+          Object.keys(parsed).length === 0 && demoSeeded !== 'true';
+
+        if (shouldSeedDemo) {
+          setTasks(createDemoTasks());
+          await AsyncStorage.setItem(DEMO_SEEDED_KEY, 'true');
+        } else {
           setTasks(parsed);
         }
       } catch (e) {
         console.warn('Failed to load tasks', e);
+      } finally {
+        setHydrated(true);
       }
     })();
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)).catch((e) => {
       console.warn('Failed to persist tasks', e);
     });
-  }, [tasks]);
+  }, [hydrated, tasks]);
 
   const upsertTask = useCallback((task: Task) => {
     setTasks((prev) => {
@@ -98,6 +113,5 @@ export function useTasks(): TaskContextValue {
   }
   return ctx;
 }
-
 
 
