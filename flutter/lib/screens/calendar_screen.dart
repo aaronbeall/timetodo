@@ -494,17 +494,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
         task.startTime != null &&
         task.endTime != null &&
         !day.isBefore(_today);
+    final hasCentralPolar =
+        _span == _CalSpan.day || _span == _CalSpan.schedule;
     showTaskSummarySheet(
       context,
       task: task,
       now: TimeOfDay.now(),
       onEdit: () => widget.onEditTask?.call(task.task),
-      onMove: canMove
+      onMove: canMove && hasCentralPolar
           ? () {
               setState(() => _movingTaskId = task.id);
               _scrollToClock();
             }
           : null,
+      inlinePolarMove: canMove && !hasCentralPolar,
     );
   }
 

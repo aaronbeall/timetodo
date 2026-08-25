@@ -11,6 +11,7 @@ class TaskTimeframeField extends StatelessWidget {
   final bool showTrailingTimeIcon;
   final bool leadingIcons;
   final VoidCallback? onMove;
+  final VoidCallback? onResetTimes;
 
   const TaskTimeframeField({
     super.key,
@@ -23,6 +24,7 @@ class TaskTimeframeField extends StatelessWidget {
     this.showTrailingTimeIcon = true,
     this.leadingIcons = false,
     this.onMove,
+    this.onResetTimes,
   });
 
   @override
@@ -49,6 +51,7 @@ class TaskTimeframeField extends StatelessWidget {
               label: 'Timeframe',
               value: _rangeLabel(context),
               onTap: () => _pickTimeframe(context),
+              onResetTimes: onResetTimes,
               action: onMove == null
                   ? null
                   : FilledButton.tonalIcon(
@@ -118,6 +121,7 @@ class TaskTimeframeField extends StatelessWidget {
     required String label,
     required String value,
     required VoidCallback onTap,
+    VoidCallback? onResetTimes,
     Widget? action,
   }) {
     final theme = Theme.of(context);
@@ -149,6 +153,18 @@ class TaskTimeframeField extends StatelessWidget {
             ),
           ),
           if (action != null) action,
+          if (onResetTimes != null)
+            IconButton(
+              tooltip: 'Reset to task time',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(
+                minWidth: 32,
+                minHeight: 32,
+              ),
+              icon: const Icon(Icons.restart_alt_rounded, size: 18),
+              onPressed: onResetTimes,
+            ),
           InkWell(
             onTap: onTap,
             child: Padding(
