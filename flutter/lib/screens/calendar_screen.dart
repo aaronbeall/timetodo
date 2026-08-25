@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -54,18 +57,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
   late DateTime _pageOrigin;
   late PageController _pager;
   String? _movingTaskId;
-  final _bodyScroll = ScrollController();
+  final _docks = <String, _PolarDockScrollState>{};
 
   DateTime get _today => dateOnly(DateTime.now());
 
+  void _bindDock(String id, _PolarDockScrollState state) {
+    _docks[id] = state;
+  }
+
+  void _unbindDock(String id, _PolarDockScrollState state) {
+    if (identical(_docks[id], state)) _docks.remove(id);
+  }
+
   void _scrollToClock() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_bodyScroll.hasClients) return;
-      _bodyScroll.animateTo(
-        0,
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeOutCubic,
-      );
+      _docks[dateKey(_focus)]?.scrollToTop();
     });
   }
 
@@ -87,7 +93,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   void dispose() {
     _pager.dispose();
-    _bodyScroll.dispose();
     super.dispose();
   }
 
@@ -193,7 +198,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
         next.day == cur.day) {
       return;
     }
-    setState(() => _focus = day);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() => _focus = day);
+    });
   }
 
   @override
@@ -370,6 +378,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     bool compactLook = false,
     bool interactive = true,
     double? holeFraction,
+    double hourLabelOpacity = 1,
   }) {
     final isToday = isSameDay(day, DateTime.now());
     final canMove =
@@ -382,6 +391,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       showNow: isToday,
       compactLook: compactLook,
       holeFraction: holeFraction,
+      hourLabelOpacity: hourLabelOpacity,
       onTaskTap: interactive ? _showOccurrence : null,
       enableMove: canMove,
       movingTaskId: canMove ? _movingTaskId : null,
@@ -417,41 +427,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  Widget _polarWithSideNav(
-    List<ScheduledTask> items, {
-    required DateTime day,
-    required double maxWidth,
-  }) {
-    final polarSize = (maxWidth - 96).clamp(160.0, 280.0);
-    return Row(
-      children: [
-        IconButton(
-          tooltip: 'Previous',
-          visualDensity: VisualDensity.compact,
-          onPressed: () => _step(-1),
-          icon: const Icon(Icons.chevron_left_rounded),
-        ),
-        Expanded(
-          child: Center(
-            child: _polarWithTime(items, size: polarSize, day: day),
-          ),
-        ),
-        IconButton(
-          tooltip: 'Next',
-          visualDensity: VisualDensity.compact,
-          onPressed: () => _step(1),
-          icon: const Icon(Icons.chevron_right_rounded),
-        ),
-      ],
-    );
-  }
-
   Widget _polarWithTime(
     List<ScheduledTask> tasks, {
     required double size,
     required DateTime day,
+    required double maxClock,
+    double hourLabelOpacity = 1,
+    bool docked = false,
   }) {
-    final polar = _polar(tasks, size: size, day: day, enableMove: true);
+    final polar = _polar(
+      tasks,
+      size: size,
+      day: day,
+      enableMove: !docked || _movingTaskId != null,
+      hourLabelOpacity: hourLabelOpacity,
+      interactive: !docked,
+    );
+    final timeScale = (size / maxClock).clamp(0.42, 1.0);
     return SizedBox(
       width: size,
       child: Stack(
@@ -464,7 +456,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
             right: 0,
             height: size,
             child: Center(
-              child: _nowHubLabel(size, showTime: isSameDay(day, _today)),
+              child: Transform.scale(
+                scale: timeScale,
+                child: _nowHubLabel(size, showTime: isSameDay(day, _today)),
+              ),
             ),
           ),
         ],
@@ -522,50 +517,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
             .compareTo(b.startTime == null ? 0 : minutesOf(b.startTime!));
       });
     final now = TimeOfDay.now();
-    return LayoutBuilder(
-            builder: (context, constraints) {
-              return ListView(
-                controller: _bodyScroll,
-                physics: _movingTaskId != null
-                    ? const NeverScrollableScrollPhysics()
-                    : const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
-                children: [
-                  _polarWithSideNav(
-                    items,
-                    day: day,
-                    maxWidth: constraints.maxWidth,
+    return _dockedPolarPage(
+      day: day,
+      items: items,
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          children: [
+            if (items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: Center(
+                  child: Text(
+                    'Nothing scheduled',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.5),
+                        ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    child: Column(
-                      children: [
-                        if (items.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 24),
-                            child: Center(
-                              child: Text(
-                                'Nothing scheduled',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withOpacity(0.5),
-                                    ),
-                              ),
-                            ),
-                          ),
-                        ..._scheduleRows(provider, day, items, now),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
+                ),
+              ),
+            ..._scheduleRows(provider, day, items, now),
+          ],
+        ),
+      ),
+    );
   }
 
   List<Widget> _scheduleRows(
@@ -664,69 +642,85 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _dayView(TaskProvider provider, DateTime day) {
     final items = provider.scheduledOn(day);
     final allDay = allDayTasks(items);
-    return LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                controller: _bodyScroll,
-                physics: _movingTaskId != null
-                    ? const NeverScrollableScrollPhysics()
-                    : const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
-                child: Column(
-                  children: [
-                    _polarWithSideNav(
-                      items,
-                      day: day,
-                      maxWidth: constraints.maxWidth,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
-                      child: Column(
-                        children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: kHourRailWidth,
-                          height: AllDayStack.heightFor(allDay.length),
-                          child: const Padding(
-                            padding: EdgeInsets.only(right: 4, top: 6),
-                            child: AxisCaption(text: 'All day'),
-                          ),
-                        ),
-                        Expanded(
-                          child: AllDayStack(
-                            tasks: allDay,
-                            onTaskTap: _showOccurrence,
-                          ),
-                        ),
-                        const SizedBox(width: kHourRailWidth),
-                      ],
-                    ),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        HourRail(hourHeight: 44, tasks: items),
-                        Expanded(
-                          child: DayTimeline(
-                            tasks: items,
-                            hourHeight: 44,
-                            axisMarks: const [],
-                            nowMinutes: _nowMinutesOn(day),
-                            onTaskTap: _showOccurrence,
-                          ),
-                        ),
-                        const SizedBox(width: kHourRailWidth),
-                      ],
-                    ),
-                        ],
-                      ),
-                    ),
-                  ],
+    return _dockedPolarPage(
+      day: day,
+      items: items,
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 24),
+        child: Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: kHourRailWidth,
+                  height: AllDayStack.heightFor(allDay.length),
+                  child: const Padding(
+                    padding: EdgeInsets.only(right: 4, top: 6),
+                    child: AxisCaption(text: 'All day'),
+                  ),
                 ),
-              );
-            },
-          );
+                Expanded(
+                  child: AllDayStack(
+                    tasks: allDay,
+                    onTaskTap: _showOccurrence,
+                  ),
+                ),
+                const SizedBox(width: kHourRailWidth),
+              ],
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                HourRail(hourHeight: 44, tasks: items),
+                Expanded(
+                  child: DayTimeline(
+                    tasks: items,
+                    hourHeight: 44,
+                    axisMarks: const [],
+                    nowMinutes: _nowMinutesOn(day),
+                    onTaskTap: _showOccurrence,
+                  ),
+                ),
+                const SizedBox(width: kHourRailWidth),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dockedPolarPage({
+    required DateTime day,
+    required List<ScheduledTask> items,
+    required Widget body,
+  }) {
+    final maxClock =
+        (MediaQuery.sizeOf(context).width - 96).clamp(160.0, 280.0);
+    final id = dateKey(dateOnly(day));
+    return _PolarDockScroll(
+      key: ValueKey(id),
+      dockId: id,
+      onBind: _bindDock,
+      onUnbind: _unbindDock,
+      maxClock: maxClock,
+      spacerHeight: maxClock +
+          16 +
+          (_movingTaskId != null ? PolarClock.moveActionsExtent : 0),
+      lockScroll: _movingTaskId != null,
+      onPrevious: () => _step(-1),
+      onNext: () => _step(1),
+      polar: (size, frameT, docked) => _polarWithTime(
+        items,
+        size: size,
+        day: day,
+        maxClock: maxClock,
+        hourLabelOpacity: 1 - frameT,
+        docked: docked,
+      ),
+      body: body,
+    );
   }
 
   Widget _weekView(TaskProvider provider, DateTime focus) {
@@ -762,28 +756,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       children: [
                         for (final day in days)
                           Expanded(
-                            child: InkWell(
-                              onTap: () => _setSpan(_CalSpan.day, focus: day),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    DateFormat.E().format(day),
-                                    style:
-                                        Theme.of(context).textTheme.labelSmall,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  _TodayDayMark(
-                                    label: '${day.day}',
-                                    today: isSameDay(day, _today),
-                                    size: 32,
-                                  ),
-                                ],
+                            child: Center(
+                              child: Text(
+                                DateFormat.E().format(day),
+                                style: Theme.of(context).textTheme.labelSmall,
                               ),
                             ),
                           ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     Row(
                       children: [
                         for (var i = 0; i < days.length; i++)
@@ -793,19 +775,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   _setSpan(_CalSpan.day, focus: days[i]),
                               child: LayoutBuilder(
                                 builder: (context, box) {
+                                  const hub = _weekHubFraction;
                                   final size =
-                                      (box.maxWidth - 4).clamp(28.0, 48.0);
+                                      (box.maxWidth - 4).clamp(40.0, 72.0);
                                   return Padding(
                                     padding: const EdgeInsets.symmetric(
                                       vertical: 2,
                                     ),
                                     child: Center(
-                                      child: _polar(
-                                        perDay[i],
+                                      child: _MonthDayCell(
+                                        dayNum: days[i].day,
                                         size: size,
-                                        day: days[i],
-                                        compactLook: true,
-                                        interactive: false,
+                                        today: isSameDay(days[i], _today),
+                                        hubFraction: hub,
+                                        polar: _polar(
+                                          perDay[i],
+                                          size: size,
+                                          day: days[i],
+                                          compactLook: true,
+                                          interactive: false,
+                                          holeFraction: hub,
+                                        ),
                                       ),
                                     ),
                                   );
@@ -996,18 +986,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 }
 
+const _weekHubFraction = 0.42;
+
 class _TodayHalo extends StatelessWidget {
   static const hubDiameterFactor = 0.34;
   final double size;
   final bool showRing;
   final Widget? hub;
   final Widget child;
+  final double hubFraction;
 
   const _TodayHalo({
     required this.size,
     required this.showRing,
     required this.child,
     this.hub,
+    this.hubFraction = hubDiameterFactor,
   });
 
   @override
@@ -1033,8 +1027,8 @@ class _TodayHalo extends StatelessWidget {
           if (hub != null)
             IgnorePointer(
               child: SizedBox(
-                width: size * hubDiameterFactor,
-                height: size * hubDiameterFactor,
+                width: size * hubFraction,
+                height: size * hubFraction,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
@@ -1053,57 +1047,19 @@ class _TodayHalo extends StatelessWidget {
   }
 }
 
-class _TodayDayMark extends StatelessWidget {
-  final String label;
-  final bool today;
-  final double size;
-
-  const _TodayDayMark({
-    required this.label,
-    required this.today,
-    required this.size,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: DecoratedBox(
-        decoration: today
-            ? BoxDecoration(
-                shape: BoxShape.circle,
-                color: scheme.primary,
-                border: Border.all(color: scheme.primary, width: 2),
-              )
-            : const BoxDecoration(),
-        child: Center(
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: today ? FontWeight.w800 : FontWeight.w500,
-                  color: today ? scheme.onPrimary : null,
-                  height: 1,
-                ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _MonthDayCell extends StatelessWidget {
   final int dayNum;
   final double size;
   final bool today;
   final Widget polar;
+  final double hubFraction;
 
   const _MonthDayCell({
     required this.dayNum,
     required this.size,
     required this.today,
     required this.polar,
+    this.hubFraction = _TodayHalo.hubDiameterFactor,
   });
 
   @override
@@ -1112,6 +1068,7 @@ class _MonthDayCell extends StatelessWidget {
     return _TodayHalo(
       size: size,
       showRing: today,
+      hubFraction: hubFraction,
       hub: today
           ? Text(
               '$dayNum',
@@ -1196,6 +1153,201 @@ class _MonthHeat extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Polar clock pinned over a spacer: shrinks into a tappable inlay instead of
+/// scrolling off-screen (same interaction as Today).
+class _PolarDockScroll extends StatefulWidget {
+  static const _minClock = 76.0;
+  static const _dockLead = 44.0;
+
+  final String dockId;
+  final void Function(String id, _PolarDockScrollState state) onBind;
+  final void Function(String id, _PolarDockScrollState state) onUnbind;
+  final double maxClock;
+  final double spacerHeight;
+  final bool lockScroll;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+  final Widget Function(double size, double frameT, bool docked) polar;
+  final Widget body;
+
+  const _PolarDockScroll({
+    super.key,
+    required this.dockId,
+    required this.onBind,
+    required this.onUnbind,
+    required this.maxClock,
+    required this.spacerHeight,
+    required this.lockScroll,
+    required this.onPrevious,
+    required this.onNext,
+    required this.polar,
+    required this.body,
+  });
+
+  @override
+  State<_PolarDockScroll> createState() => _PolarDockScrollState();
+}
+
+class _PolarDockScrollState extends State<_PolarDockScroll> {
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.onBind(widget.dockId, this);
+  }
+
+  @override
+  void didUpdateWidget(_PolarDockScroll oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dockId != widget.dockId) {
+      oldWidget.onUnbind(oldWidget.dockId, this);
+    }
+    widget.onBind(widget.dockId, this);
+  }
+
+  @override
+  void dispose() {
+    widget.onUnbind(widget.dockId, this);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void scrollToTop() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      0,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _onBodyPointerSignal(PointerSignalEvent event) {
+    if (widget.lockScroll) return;
+    if (event is! PointerScrollEvent) return;
+    if (!_scroll.hasClients) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (resolved) {
+      final delta = (resolved as PointerScrollEvent).scrollDelta.dy;
+      _scroll.position.pointerScroll(delta);
+    });
+  }
+
+  void _onClockDragUpdate(DragUpdateDetails details) {
+    if (widget.lockScroll) return;
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    pos.jumpTo(
+      (pos.pixels - details.delta.dy).clamp(
+        pos.minScrollExtent,
+        pos.maxScrollExtent,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const frameInset = 5.0;
+    const pipPad = 12.0;
+    return Listener(
+      onPointerSignal: _onBodyPointerSignal,
+      child: Stack(
+        children: [
+          CustomScrollView(
+            controller: _scroll,
+            physics: widget.lockScroll
+                ? const NeverScrollableScrollPhysics()
+                : const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: SizedBox(height: widget.spacerHeight),
+              ),
+              SliverToBoxAdapter(child: widget.body),
+            ],
+          ),
+          AnimatedBuilder(
+            animation: _scroll,
+            builder: (context, _) {
+              final offset = _scroll.hasClients ? _scroll.offset : 0.0;
+              final remaining =
+                  (widget.spacerHeight - offset).clamp(0.0, widget.spacerHeight);
+              final size = remaining.clamp(_PolarDockScroll._minClock, widget.maxClock);
+              final docked = remaining <= _PolarDockScroll._minClock;
+              final dockRaw = ((_PolarDockScroll._dockLead -
+                          (size - _PolarDockScroll._minClock)) /
+                      _PolarDockScroll._dockLead)
+                  .clamp(0.0, 1.0);
+              final frameT = Curves.easeInOutCubic.transform(dockRaw);
+              final bezel = frameInset * 2 * frameT;
+              final centeredTop = math.max(0.0, (remaining - size - bezel) / 2);
+              final top = centeredTop + (pipPad - centeredTop) * frameT;
+              final theme = Theme.of(context);
+
+              final clockFace = DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Color.lerp(
+                    Colors.transparent,
+                    theme.colorScheme.surface,
+                    frameT,
+                  ),
+                  borderRadius: BorderRadius.circular(8 + 10 * frameT),
+                  border: Border.all(
+                    color: theme.colorScheme.onSurface.withOpacity(0.18 * frameT),
+                    width: 1.5 * frameT,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.22 * frameT),
+                      blurRadius: 18 * frameT,
+                      offset: Offset(0, 6 * frameT),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: EdgeInsets.all(frameInset * frameT),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6 + 6 * frameT),
+                    child: widget.polar(size, frameT, docked),
+                  ),
+                ),
+              );
+
+              return Positioned(
+                left: 0,
+                right: 0,
+                top: top,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: 'Previous',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: widget.onPrevious,
+                      icon: const Icon(Icons.chevron_left_rounded),
+                    ),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate:
+                          widget.lockScroll ? null : _onClockDragUpdate,
+                      onTap: docked ? scrollToTop : null,
+                      child: clockFace,
+                    ),
+                    IconButton(
+                      tooltip: 'Next',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: widget.onNext,
+                      icon: const Icon(Icons.chevron_right_rounded),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }

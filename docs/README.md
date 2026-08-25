@@ -35,3 +35,4 @@ The initial market wedge is an Android-first, task-native radial planner designe
 - Keep evidence and source links in the document where a decision depends on them.
 - Treat implementation details as evidence, not permanent commitments. Update them when the product changes.
 - Put engineering specifications and task tracking elsewhere; these files explain why and what, not ticket-level implementation.
+- Implementation gaps: [../TODO.md](../TODO.md).

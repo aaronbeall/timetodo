@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/time_utils.dart';
@@ -172,6 +174,18 @@ class TaskListItem extends StatelessWidget {
     return '';
   }
 
+  /// Extra vertical padding on Schedule rows so longer spans read as taller
+  /// blocks without mapping 1:1 to duration.
+  double _verticalPad() {
+    const base = 6.0;
+    if (!calendarList || _isAllDay) return base;
+    if (task.startTime == null || task.endTime == null) return base;
+    final minutes = durationMinutes(task.startTime!, task.endTime!).clamp(1, 8 * 60);
+    final t = ((math.log(minutes) - math.log(20)) / (math.log(240) - math.log(20)))
+        .clamp(0.0, 1.0);
+    return base + t * 16;
+  }
+
   Color _inkColor(Color base, Brightness brightness) {
     final hsl = HSLColor.fromColor(base);
     if (brightness == Brightness.dark) {
@@ -282,7 +296,7 @@ class TaskListItem extends StatelessWidget {
                 ),
               ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+              padding: EdgeInsets.fromLTRB(12, _verticalPad(), 6, _verticalPad()),
               child: Row(
                 children: [
             if (task.isCompleted) ...[

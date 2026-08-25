@@ -1,16 +1,57 @@
-# timetodo
+# Flutter app
 
-A new Flutter project.
+Package name: `timetodo`  
+Entry: `lib/main.dart` (`TimeToDoApp`)
 
-## Getting Started
+Product/strategy docs live in the repo root (`docs/`, `TODO.md`), not here.
 
-This project is a starting point for a Flutter application.
+## Requirements
 
-A few resources to get you started if this is your first Flutter project:
+- Flutter SDK with Dart `>=3.0.0 <4.0.0` (see `pubspec.yaml`)
+- A device or emulator: iOS, Android, macOS, or Chrome (`flutter devices`)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+From this directory:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter pub get
+```
+
+## Run
+
+```bash
+flutter run
+# or
+flutter run -d chrome
+flutter run -d macos
+```
+
+## Check
+
+```bash
+dart analyze
+flutter test
+```
+
+Lint rules: `analysis_options.yaml` (includes `package:flutter_lints/flutter.yaml`).
+
+## Layout
+
+```
+lib/
+  main.dart              # MaterialApp, providers, tab shell
+  app_navigation.dart
+  time_utils.dart
+  models/                # Task, TaskEra, TaskOccurrence, ScheduledTask
+  data/                  # TaskStore; LocalTaskStore → SharedPreferences JSON
+  providers/             # TaskProvider, theme, time format, polar look
+  screens/
+  widgets/
+```
+
+State is `provider`. Tasks persist locally (`timetodo.snapshot.v2` in SharedPreferences). There is no backend.
+
+Settings (theme, 12/24h, polar look) also use SharedPreferences.
+
+## Tests
+
+`test/widget_test.dart` is a smoke test only. Add coverage next to the code you change (`test/`).
