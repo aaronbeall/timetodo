@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/models/task.dart';
 import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/task_color_picker.dart';
 import 'package:timetodo/widgets/task_repeat_field.dart';
+import 'package:timetodo/widgets/task_time_arc.dart';
 import 'package:timetodo/widgets/task_timeframe_field.dart';
 
 class TaskDetailsForm extends StatelessWidget {
@@ -83,12 +85,19 @@ class TaskDetailsForm extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
+                leading: TaskTimeArc(
+                  task: ScheduledTask(
+                    task: past,
+                    date: past.startDate,
+                  ),
+                  size: 32,
+                ),
                 title: Text(
                   past.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle: Text(_activeRange(context, past)),
+                subtitle: Text(_suggestionMeta(context, past)),
                 onTap: () => onApplySuggestion!(past),
               ),
             ),
@@ -119,6 +128,30 @@ class TaskDetailsForm extends StatelessWidget {
       ],
     );
   }
+}
+
+String _suggestionMeta(BuildContext context, Task task) {
+  final parts = <String>[];
+  if (task.isAllDay) {
+    parts.add('All day');
+  } else if (task.startTime != null && task.endTime != null) {
+    parts.add(
+      '${task.startTime!.format(context)} – ${task.endTime!.format(context)}',
+    );
+  }
+  final repeat = switch (task.repeatType) {
+    RepeatType.daily => 'Every day',
+    RepeatType.weekly =>
+      Task.weeklyRepeatLabel(task.repeatWeekdays, task.startDate),
+    RepeatType.monthly => 'Monthly',
+    RepeatType.custom => (task.repeatInterval ?? 1) == 1
+        ? 'Every day'
+        : 'Every ${task.repeatInterval} days',
+    RepeatType.none => '',
+  };
+  if (repeat.isNotEmpty) parts.add(repeat);
+  parts.add(_activeRange(context, task));
+  return parts.join(' · ');
 }
 
 String _activeRange(BuildContext context, Task task) {

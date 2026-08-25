@@ -5,6 +5,7 @@ import 'package:timetodo/models/task.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/screens/settings_screen.dart';
 import 'package:timetodo/widgets/task_editor.dart';
+import 'package:timetodo/widgets/task_repeat_field.dart';
 import 'package:timetodo/widgets/task_time_arc.dart';
 import 'package:timetodo/widgets/add_task_dialog.dart';
 import 'package:timetodo/widgets/change_toast.dart';
@@ -455,12 +456,10 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   Future<void> _addNewTask(BuildContext context) async {
-    final created = await showDialog<Task>(
-      context: context,
-      builder: (context) => AddTaskDialog(
-        initialDate: dateOnly(DateTime.now()),
-        initialStartTime: TimeOfDay.now(),
-      ),
+    final created = await AddTaskDialog.open(
+      context,
+      initialDate: dateOnly(DateTime.now()),
+      initialStartTime: TimeOfDay.now(),
     );
     if (!mounted || created == null) return;
     setState(() => _expandTask(created.id));
@@ -507,7 +506,6 @@ class _TaskRowMeta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Row(
       children: [
         if (timeLabel.isNotEmpty)
@@ -520,21 +518,7 @@ class _TaskRowMeta extends StatelessWidget {
           ),
         if (repeatLabel != null) ...[
           if (timeLabel.isNotEmpty) const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              repeatLabel!,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                height: 1.1,
-                color: theme.colorScheme.onSecondaryContainer,
-              ),
-            ),
-          ),
+          TaskRepeatBadge(label: repeatLabel!),
         ],
       ],
     );

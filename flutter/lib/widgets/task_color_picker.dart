@@ -23,17 +23,22 @@ class TaskColorPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        for (final color in kTaskColors)
-          _ColorSwatch(
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        itemCount: kTaskColors.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, i) {
+          final color = kTaskColors[i];
+          return _ColorSwatch(
             color: color,
             selected: _sameColor(color, selected),
             onTap: () => onSelected(color),
-          ),
-      ],
+          );
+        },
+      ),
     );
   }
 }

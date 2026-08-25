@@ -95,7 +95,11 @@ class PolarClock extends StatefulWidget {
   final ValueChanged<ScheduledTask>? onTaskTap;
   final bool animate;
   final bool showNow;
+  /// When true, task bands stay full opacity even if [showNow] is on.
+  final bool fullColor;
   final bool enableMove;
+  /// When true, stay in move/resize without Cancel/Save; emit [onMoveCommit] as the arc changes.
+  final bool liveEdit;
   final String? movingTaskId;
   final ValueChanged<ScheduledTask>? onMoveStart;
   final VoidCallback? onMoveCancel;
@@ -114,7 +118,9 @@ class PolarClock extends StatefulWidget {
     this.onTaskTap,
     this.animate = true,
     this.showNow = true,
+    this.fullColor = false,
     this.enableMove = false,
+    this.liveEdit = false,
     this.movingTaskId,
     this.onMoveStart,
     this.onMoveCancel,
@@ -160,7 +166,7 @@ class _PolarClockState extends State<PolarClock>
       widget.currentTime,
       look: _look,
       viewingPm: _viewingPm,
-      fullColor: !widget.showNow,
+      fullColor: widget.fullColor || !widget.showNow,
     );
     _from = Map.of(_to);
     if (widget.movingTaskId != null) {
@@ -210,6 +216,10 @@ class _PolarClockState extends State<PolarClock>
           _primeDraft(widget.movingTaskId!);
         }
       }
+    } else if (widget.liveEdit &&
+        widget.movingTaskId != null &&
+        _grab == null) {
+      _primeDraft(widget.movingTaskId!);
     }
     if (widget.compactLook != oldWidget.compactLook ||
         widget.holeFraction != oldWidget.holeFraction) {
@@ -434,6 +444,7 @@ class _PolarClockState extends State<PolarClock>
       _draftDuration = duration;
     });
     _syncArcs(reduce: true);
+    _emitLiveMove();
   }
 
   void _onPointerUp() {
@@ -481,6 +492,23 @@ class _PolarClockState extends State<PolarClock>
       _draftDuration = nextDuration;
     });
     _syncArcs(reduce: MediaQuery.disableAnimationsOf(context));
+    _emitLiveMove();
+  }
+
+  void _emitLiveMove() {
+    if (!widget.liveEdit) return;
+    final id = _activeId;
+    final start = _draftStart;
+    final duration = _draftDuration;
+    if (id == null || start == null || duration == null) return;
+    final task = _taskById(id);
+    if (task == null) return;
+    const day = PolarClockPainter._minutesPerDay;
+    widget.onMoveCommit?.call(
+      task,
+      timeFromMinutes(start.round()),
+      timeFromMinutes((start + duration).round() % day),
+    );
   }
 
   void _commitMove() {
@@ -522,7 +550,7 @@ class _PolarClockState extends State<PolarClock>
         if (arc.id == id)
           arc.copyWith(opacity: 1)
         else
-          arc.copyWith(opacity: arc.opacity * 0.22),
+          arc.copyWith(opacity: arc.opacity * 0.28),
     ];
   }
 
@@ -532,7 +560,7 @@ class _PolarClockState extends State<PolarClock>
       widget.currentTime,
       look: _look,
       viewingPm: _viewingPm,
-      fullColor: !widget.showNow,
+      fullColor: widget.fullColor || !widget.showNow,
       draftId: _isMoving ? _activeId : null,
       draftStart: _draftStart,
       draftDuration: _draftDuration,
@@ -600,9 +628,10 @@ class _PolarClockState extends State<PolarClock>
                   arcs: arcs,
                   moving: _isMoving,
                   look: _look,
-                  onTapId: _isMoving || widget.onTaskTap == null
+                  onTapId: widget.onTaskTap == null
                       ? null
                       : (id) {
+                          if (widget.liveEdit && id == _activeId) return;
                           ScheduledTask? task;
                           for (final t in widget.tasks) {
                             if (t.id == id) {
@@ -618,6 +647,7 @@ class _PolarClockState extends State<PolarClock>
                   onPointerDown: _onPointerDown,
                   onPointerMove: _onPointerMove,
                   onPointerUp: _onPointerUp,
+                  movingId: widget.liveEdit ? _activeId : null,
                   child: CustomPaint(
                     size: clockSize,
                     painter: PolarClockPainter(
@@ -639,7 +669,7 @@ class _PolarClockState extends State<PolarClock>
                   ),
                 ),
               ),
-              if (_isMoving)
+              if (_isMoving && !widget.liveEdit)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
                   child: Row(
@@ -1114,6 +1144,7 @@ bool _rangesOverlap(_TaskRange a, _TaskRange b) {
 class _ArcHitTarget extends SingleChildRenderObjectWidget {
   final List<_ArcGeom> arcs;
   final bool moving;
+  final String? movingId;
   final ValueChanged<String>? onTapId;
   final ValueChanged<String>? onLongPressId;
   final ValueChanged<Offset>? onPointerDown;
@@ -1124,6 +1155,7 @@ class _ArcHitTarget extends SingleChildRenderObjectWidget {
   const _ArcHitTarget({
     required this.arcs,
     required this.moving,
+    this.movingId,
     required this.onTapId,
     required this.onLongPressId,
     required this.onPointerDown,
@@ -1138,6 +1170,7 @@ class _ArcHitTarget extends SingleChildRenderObjectWidget {
     return _RenderArcHit(
       arcs: arcs,
       moving: moving,
+      movingId: movingId,
       onTapId: onTapId,
       onLongPressId: onLongPressId,
       onPointerDown: onPointerDown,
@@ -1155,6 +1188,7 @@ class _ArcHitTarget extends SingleChildRenderObjectWidget {
     renderObject
       ..arcs = arcs
       ..moving = moving
+      ..movingId = movingId
       ..onTapId = onTapId
       ..onLongPressId = onLongPressId
       ..onPointerDown = onPointerDown
@@ -1168,6 +1202,7 @@ class _RenderArcHit extends RenderProxyBox {
   _RenderArcHit({
     required List<_ArcGeom> arcs,
     required bool moving,
+    this.movingId,
     required this.onTapId,
     required this.onLongPressId,
     required this.onPointerDown,
@@ -1180,6 +1215,7 @@ class _RenderArcHit extends RenderProxyBox {
 
   List<_ArcGeom> _arcs;
   bool _moving;
+  String? movingId;
   PolarClockLook _look;
   ValueChanged<String>? onTapId;
   ValueChanged<String>? onLongPressId;
@@ -1191,6 +1227,7 @@ class _RenderArcHit extends RenderProxyBox {
   Offset? _down;
   String? _downId;
   bool _longFired = false;
+  bool _dragged = false;
   int? _pointer;
 
   set arcs(List<_ArcGeom> value) {
@@ -1227,6 +1264,7 @@ class _RenderArcHit extends RenderProxyBox {
       _down = event.localPosition;
       _downId = _idAt(_down!);
       _longFired = false;
+      _dragged = false;
       _longPress?.cancel();
       if (_moving) {
         onPointerDown?.call(event.localPosition);
@@ -1238,6 +1276,9 @@ class _RenderArcHit extends RenderProxyBox {
         });
       }
     } else if (event is PointerMoveEvent && event.pointer == _pointer) {
+      if (_down != null && (event.localPosition - _down!).distance > 14) {
+        _dragged = true;
+      }
       if (!_longFired &&
           !_moving &&
           _down != null &&
@@ -1251,6 +1292,13 @@ class _RenderArcHit extends RenderProxyBox {
       _longPress?.cancel();
       if (_moving || _longFired) {
         onPointerUp?.call();
+        if (_moving &&
+            !_dragged &&
+            !_longFired &&
+            _downId != null &&
+            _downId != movingId) {
+          onTapId?.call(_downId!);
+        }
       } else if (_downId != null && !_longFired) {
         onTapId?.call(_downId!);
       }

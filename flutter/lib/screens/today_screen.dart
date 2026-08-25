@@ -754,12 +754,10 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   void _showAddTaskDialog(BuildContext context, TaskProvider taskProvider) {
-    showDialog(
-      context: context,
-      builder: (context) => AddTaskDialog(
-        initialDate: DateTime.now(),
-        initialStartTime: _currentTime,
-      ),
+    AddTaskDialog.open(
+      context,
+      initialDate: DateTime.now(),
+      initialStartTime: _currentTime,
     );
   }
 }
