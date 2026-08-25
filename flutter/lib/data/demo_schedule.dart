@@ -67,6 +67,7 @@ class _DemoBuilder {
     RepeatType repeat = RepeatType.none,
     List<int>? weekdays,
     DateTime? startDate,
+    DateTime? until,
   }) {
     final i = _n++;
     final begins = startDate ??
@@ -78,12 +79,18 @@ class _DemoBuilder {
       endTime: end,
       color: color ?? _palette[i % _palette.length],
       startDate: begins,
+      endDate: until,
       repeatType: repeat,
       repeatWeekdays: weekdays,
     );
   }
 
-  Task allDay(String label, Color color, {RepeatType repeat = RepeatType.daily}) {
+  Task allDay(
+    String label,
+    Color color, {
+    RepeatType repeat = RepeatType.daily,
+    DateTime? until,
+  }) {
     final i = _n++;
     return Task(
       id: 'demo-$i',
@@ -91,6 +98,7 @@ class _DemoBuilder {
       isAllDay: true,
       color: color,
       startDate: repeat == RepeatType.none ? date : historyStart,
+      endDate: until,
       repeatType: repeat,
     );
   }
@@ -133,6 +141,7 @@ List<Task> _light(DateTime day) {
       color: const Color(0xFFFF7043),
     ),
     d.allDay('Drink water', const Color(0xFF29B6F6)),
+    ..._archived(d),
   ];
 }
 
@@ -193,6 +202,7 @@ List<Task> _typical(DateTime day) {
       repeat: RepeatType.daily,
     ),
     d.allDay('Drink water', const Color(0xFF29B6F6)),
+    ..._archived(d),
   ];
 }
 
@@ -273,8 +283,47 @@ List<Task> _packed(DateTime day) {
   todayBlock('Hiring loop', 16 * 60, 90);
   todayBlock('Inbox', 12 * 60 + 15, 35);
   todayBlock('Slack catch-up', 15 * 60 + 10, 25);
-
+  tasks.addAll(_archived(d));
   return tasks;
+}
+
+/// Closed series for Tasks → Archived (reopen / add-from-archive).
+List<Task> _archived(_DemoBuilder d) {
+  final lastWeek = d.date.subtract(const Duration(days: 5));
+  final lastMonth = d.date.subtract(const Duration(days: 18));
+  return [
+    d.timed(
+      label: 'Spanish class',
+      start: _t(18, 0),
+      end: _t(19, 0),
+      color: const Color(0xFF26C6DA),
+      repeat: RepeatType.weekly,
+      weekdays: [DateTime.tuesday, DateTime.thursday],
+      until: lastWeek,
+    ),
+    d.timed(
+      label: 'Physio',
+      start: _t(16, 0),
+      end: _t(16, 45),
+      color: const Color(0xFF66BB6A),
+      repeat: RepeatType.weekly,
+      weekdays: [DateTime.wednesday],
+      until: d.date.subtract(const Duration(days: 12)),
+    ),
+    d.timed(
+      label: 'Conference travel',
+      start: _t(8, 0),
+      end: _t(20, 0),
+      color: const Color(0xFFFF7043),
+      startDate: lastMonth,
+      until: lastMonth.add(const Duration(days: 2)),
+    ),
+    d.allDay(
+      'Meditate',
+      const Color(0xFFAB47BC),
+      until: lastWeek,
+    ),
+  ];
 }
 
 List<TaskOccurrence> _history(List<Task> tasks, DateTime today) {
