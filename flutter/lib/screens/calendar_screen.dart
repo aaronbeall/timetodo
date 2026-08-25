@@ -205,16 +205,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
         title: Row(
           children: [
             IconButton(
-              tooltip: 'Previous',
-              onPressed: () => _step(-1),
-              icon: const Icon(Icons.chevron_left_rounded),
-            ),
-            IconButton(
-              tooltip: 'Next',
-              onPressed: () => _step(1),
-              icon: const Icon(Icons.chevron_right_rounded),
-            ),
-            IconButton(
               tooltip: 'Today',
               onPressed: _isCurrentPeriod
                   ? null
@@ -377,16 +367,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required double size,
     required DateTime day,
     bool enableMove = false,
+    bool compactLook = false,
+    bool interactive = true,
+    double? holeFraction,
   }) {
     final isToday = isSameDay(day, DateTime.now());
-    final canMove = enableMove && !dateOnly(day).isBefore(_today);
+    final canMove =
+        interactive && enableMove && !dateOnly(day).isBefore(_today);
     return PolarClock(
-      currentTime: isToday ? TimeOfDay.now() : const TimeOfDay(hour: 0, minute: 0),
+      currentTime: TimeOfDay.now(),
       tasks: tasks,
       size: size,
       animate: false,
       showNow: isToday,
-      onTaskTap: _showOccurrence,
+      compactLook: compactLook,
+      holeFraction: holeFraction,
+      onTaskTap: interactive ? _showOccurrence : null,
       enableMove: canMove,
       movingTaskId: canMove ? _movingTaskId : null,
       onMoveStart: (task) {
@@ -421,13 +417,41 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  Widget _polarWithSideNav(
+    List<ScheduledTask> items, {
+    required DateTime day,
+    required double maxWidth,
+  }) {
+    final polarSize = (maxWidth - 96).clamp(160.0, 280.0);
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Previous',
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _step(-1),
+          icon: const Icon(Icons.chevron_left_rounded),
+        ),
+        Expanded(
+          child: Center(
+            child: _polarWithTime(items, size: polarSize, day: day),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Next',
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _step(1),
+          icon: const Icon(Icons.chevron_right_rounded),
+        ),
+      ],
+    );
+  }
+
   Widget _polarWithTime(
     List<ScheduledTask> tasks, {
     required double size,
     required DateTime day,
   }) {
     final polar = _polar(tasks, size: size, day: day, enableMove: true);
-    if (!isSameDay(day, _today)) return polar;
     return SizedBox(
       width: size,
       child: Stack(
@@ -439,42 +463,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
             left: 0,
             right: 0,
             height: size,
-            child: IgnorePointer(child: Center(child: _nowHubLabel(size))),
+            child: Center(
+              child: _nowHubLabel(size, showTime: isSameDay(day, _today)),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _nowHubLabel(double size) {
+  Widget _nowHubLabel(double size, {required bool showTime}) {
     final now = TimeOfDay.now();
-    final hour = now.hour == 0 ? 12 : (now.hour > 12 ? now.hour - 12 : now.hour);
-    final minute = now.minute.toString().padLeft(2, '0');
-    final period = now.hour >= 12 ? 'PM' : 'AM';
     final color = Theme.of(context).colorScheme.onSurface;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '$hour:$minute',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: (size * 0.1).clamp(12.0, 20.0),
-            height: 1,
-            color: color,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          period,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: (size * 0.045).clamp(8.0, 11.0),
-            height: 1,
-            color: color.withValues(alpha: 0.55),
-          ),
-        ),
-      ],
+    return PolarClockHub(
+      time: now,
+      showTime: showTime,
+      timeStyle: TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: (size * 0.1).clamp(12.0, 20.0),
+        height: 1,
+        color: color,
+      ),
+      periodStyle: TextStyle(
+        fontWeight: FontWeight.w600,
+        fontSize: (size * 0.045).clamp(8.0, 11.0),
+        height: 1,
+        color: color.withValues(alpha: 0.55),
+      ),
     );
   }
 
@@ -509,35 +524,44 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final now = TimeOfDay.now();
     return LayoutBuilder(
             builder: (context, constraints) {
-              final polarSize =
-                  (constraints.maxWidth - 48).clamp(160.0, 280.0);
               return ListView(
                 controller: _bodyScroll,
                 physics: _movingTaskId != null
                     ? const NeverScrollableScrollPhysics()
                     : const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
                 children: [
-                  Center(
-                    child: _polarWithTime(items, size: polarSize, day: day),
+                  _polarWithSideNav(
+                    items,
+                    day: day,
+                    maxWidth: constraints.maxWidth,
                   ),
-                  const SizedBox(height: 16),
-                  if (items.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 24),
-                      child: Center(
-                        child: Text(
-                          'Nothing scheduled',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withOpacity(0.5),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Column(
+                      children: [
+                        if (items.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 24),
+                            child: Center(
+                              child: Text(
+                                'Nothing scheduled',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withOpacity(0.5),
+                                    ),
                               ),
-                        ),
-                      ),
+                            ),
+                          ),
+                        ..._scheduleRows(provider, day, items, now),
+                      ],
                     ),
-                  ..._scheduleRows(provider, day, items, now),
+                  ),
                 ],
               );
             },
@@ -642,18 +666,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final allDay = allDayTasks(items);
     return LayoutBuilder(
             builder: (context, constraints) {
-              final polarSize =
-                  (constraints.maxWidth - 48).clamp(160.0, 280.0);
               return SingleChildScrollView(
                 controller: _bodyScroll,
                 physics: _movingTaskId != null
                     ? const NeverScrollableScrollPhysics()
                     : const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+                padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
                 child: Column(
                   children: [
-                    _polarWithTime(items, size: polarSize, day: day),
-                    const SizedBox(height: 12),
+                    _polarWithSideNav(
+                      items,
+                      day: day,
+                      maxWidth: constraints.maxWidth,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
+                      child: Column(
+                        children: [
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -671,6 +700,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             onTaskTap: _showOccurrence,
                           ),
                         ),
+                        const SizedBox(width: kHourRailWidth),
                       ],
                     ),
                     Row(
@@ -681,11 +711,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           child: DayTimeline(
                             tasks: items,
                             hourHeight: 44,
+                            axisMarks: const [],
                             nowMinutes: _nowMinutesOn(day),
                             onTaskTap: _showOccurrence,
                           ),
                         ),
+                        const SizedBox(width: kHourRailWidth),
                       ],
+                    ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -699,38 +734,99 @@ class _CalendarScreenState extends State<CalendarScreen> {
         .subtract(Duration(days: dateOnly(focus).weekday % 7));
     final days = List.generate(7, (i) => start.add(Duration(days: i)));
     final perDay = [for (final d in days) provider.scheduledOn(d)];
-    final allDayCounts = [
-      for (final list in perDay) allDayTasks(list).length,
-    ];
-    final allDayH = AllDayStack.heightFor(
-      allDayCounts.fold<int>(0, (m, n) => n > m ? n : m),
+    const hourHeight = 28.0;
+    final axisMarks = spaceAxisMarks(
+      axisMarkMinutes([for (final list in perDay) ...list]),
+      hourHeight: hourHeight,
     );
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(kHourRailWidth, 0, 8, 8),
+          padding: const EdgeInsets.only(bottom: 8),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              for (final day in days)
-                Expanded(
-                  child: InkWell(
-                    onTap: () => _setSpan(_CalSpan.day, focus: day),
-                    child: Column(
+              SizedBox(
+                width: kHourRailWidth,
+                child: IconButton(
+                  tooltip: 'Previous',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _step(-1),
+                  icon: const Icon(Icons.chevron_left_rounded),
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Row(
                       children: [
-                        Text(
-                          DateFormat.E().format(day),
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                        const SizedBox(height: 4),
-                        _TodayDayMark(
-                          label: '${day.day}',
-                          today: isSameDay(day, _today),
-                          size: 32,
-                        ),
+                        for (final day in days)
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => _setSpan(_CalSpan.day, focus: day),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    DateFormat.E().format(day),
+                                    style:
+                                        Theme.of(context).textTheme.labelSmall,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  _TodayDayMark(
+                                    label: '${day.day}',
+                                    today: isSameDay(day, _today),
+                                    size: 32,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        for (var i = 0; i < days.length; i++)
+                          Expanded(
+                            child: InkWell(
+                              onTap: () =>
+                                  _setSpan(_CalSpan.day, focus: days[i]),
+                              child: LayoutBuilder(
+                                builder: (context, box) {
+                                  final size =
+                                      (box.maxWidth - 4).clamp(28.0, 48.0);
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 2,
+                                    ),
+                                    child: Center(
+                                      child: _polar(
+                                        perDay[i],
+                                        size: size,
+                                        day: days[i],
+                                        compactLook: true,
+                                        interactive: false,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
+              SizedBox(
+                width: kHourRailWidth,
+                child: IconButton(
+                  tooltip: 'Next',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _step(1),
+                  icon: const Icon(Icons.chevron_right_rounded),
+                ),
+              ),
             ],
           ),
         ),
@@ -739,52 +835,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
             padding: const EdgeInsets.only(bottom: 16),
             child: Column(
               children: [
-                SizedBox(
-                  height: allDayH,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: kHourRailWidth,
-                        child: const Padding(
-                          padding: EdgeInsets.only(right: 4, top: 6),
-                          child: AxisCaption(text: 'All day'),
-                        ),
-                      ),
-                      for (var i = 0; i < days.length; i++)
-                        Expanded(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: isSameDay(days[i], _today)
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.07)
-                                  : null,
-                              border: Border(
-                                right: BorderSide(
-                                  color: Theme.of(context)
-                                      .dividerColor
-                                      .withValues(alpha: 0.12),
-                                ),
-                              ),
-                            ),
-                            child: AllDayStack(
-                              tasks: allDayTasks(perDay[i]),
-                              compact: true,
-                              onTaskTap: _showOccurrence,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                WeekAllDayLane(
+                  days: days,
+                  perDay: perDay,
+                  onTaskTap: _showOccurrence,
                 ),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     HourRail(
-                      hourHeight: 28,
-                      tasks: [for (final list in perDay) ...list],
+                      hourHeight: hourHeight,
+                      marks: axisMarks,
                     ),
                     for (var i = 0; i < days.length; i++)
                       Expanded(
@@ -796,23 +857,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                     .primary
                                     .withValues(alpha: 0.07)
                                 : null,
-                            border: Border(
-                              right: BorderSide(
-                                color: Theme.of(context)
-                                    .dividerColor
-                                    .withValues(alpha: 0.12),
-                              ),
-                            ),
                           ),
                           child: DayTimeline(
                             tasks: perDay[i],
-                            hourHeight: 28,
+                            hourHeight: hourHeight,
+                            axisMarks: axisMarks,
                             nowMinutes: _nowMinutesOn(days[i]),
                             compact: true,
                             onTaskTap: _showOccurrence,
                           ),
                         ),
                       ),
+                    const SizedBox(width: kHourRailWidth),
                   ],
                 ),
               ],
@@ -871,7 +927,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         dayNum: dayNum,
                         size: size,
                         today: today,
-                        polar: _polar(items, size: size, day: cell),
+                        polar: _polar(
+                          items,
+                          size: size,
+                          day: cell,
+                          compactLook: true,
+                          holeFraction: _TodayHalo.hubDiameterFactor,
+                        ),
                       ),
                     );
                   },
@@ -935,6 +997,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 }
 
 class _TodayHalo extends StatelessWidget {
+  static const hubDiameterFactor = 0.34;
   final double size;
   final bool showRing;
   final Widget? hub;
@@ -970,8 +1033,8 @@ class _TodayHalo extends StatelessWidget {
           if (hub != null)
             IgnorePointer(
               child: SizedBox(
-                width: size * 0.34,
-                height: size * 0.34,
+                width: size * hubDiameterFactor,
+                height: size * hubDiameterFactor,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,

@@ -54,13 +54,11 @@ class TaskListItem extends StatelessWidget {
     return DateTime(day.year, day.month, day.day, time.hour, time.minute);
   }
 
-  String _formatTime(TimeOfDay time) {
-    final hour = time.hour;
-    final minute = time.minute;
-    final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
-    final period = hour >= 12 ? 'p' : 'a';
-    if (minute == 0) return '$displayHour$period';
-    return '$displayHour:${minute.toString().padLeft(2, '0')}$period';
+  String _formatTime(TimeOfDay time, BuildContext context) {
+    return formatTimeCompact(
+      time,
+      use24Hour: MediaQuery.alwaysUse24HourFormatOf(context),
+    );
   }
 
   int _asMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
@@ -93,12 +91,12 @@ class TaskListItem extends StatelessWidget {
     return '$hours hr $rest min';
   }
 
-  String _exactTimeLabel() {
+  String _exactTimeLabel(BuildContext context) {
     if (_isAllDay) return calendarList ? 'All day' : '';
     if (task.startTime != null && task.endTime != null) {
-      return '${_formatTime(task.startTime!)}–${_formatTime(task.endTime!)}';
+      return '${_formatTime(task.startTime!, context)}–${_formatTime(task.endTime!, context)}';
     }
-    if (task.startTime != null) return _formatTime(task.startTime!);
+    if (task.startTime != null) return _formatTime(task.startTime!, context);
     return '';
   }
 
@@ -228,7 +226,7 @@ class TaskListItem extends StatelessWidget {
     );
 
     final relative = _relativeTimeLabel();
-    final exact = _exactTimeLabel();
+    final exact = _exactTimeLabel(context);
     final reduce = MediaQuery.disableAnimationsOf(context);
 
     return AnimatedSize(

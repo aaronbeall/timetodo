@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:timetodo/models/scheduled_task.dart';
+import 'package:timetodo/providers/polar_clock_settings.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/widgets/polar_clock.dart';
 
@@ -18,7 +19,9 @@ class PolarNavIcon extends StatelessWidget {
     final color = IconTheme.of(context).color ??
         Theme.of(context).colorScheme.onSurface;
     final tasks = context.watch<TaskProvider>().getTasksForToday();
-    final arcs = _navArcs(tasks);
+    final polar = context.watch<PolarClockSettings>();
+    final look = polar.look.copyWith(hourLabels: 0, hours12: false);
+    final arcs = _navArcs(tasks, look);
     return SizedBox(
       width: 24,
       height: 24,
@@ -27,6 +30,7 @@ class PolarNavIcon extends StatelessWidget {
           color: color,
           arcs: arcs,
           selected: selected,
+          look: look,
         ),
       ),
     );
@@ -51,7 +55,10 @@ class _NavArc {
       '${lane.toStringAsFixed(1)}:${laneCount.toStringAsFixed(1)}';
 }
 
-List<_NavArc> _navArcs(List<ScheduledTask> todayTasks) {
+List<_NavArc> _navArcs(
+  List<ScheduledTask> todayTasks,
+  PolarClockLook look,
+) {
   const minutesPerDay = 24 * 60;
   final tracks = assignPolarTracks(
     polarTimedTasks(todayTasks),
@@ -62,9 +69,9 @@ List<_NavArc> _navArcs(List<ScheduledTask> todayTasks) {
   final arcs = <_NavArc>[];
   for (final entry in tracks.entries) {
     for (final task in entry.value) {
-      final start = task.startTime!.hour * 60 + task.startTime!.minute;
+      var start = task.startTime!.hour * 60 + task.startTime!.minute;
       final end = task.endTime!.hour * 60 + task.endTime!.minute;
-      final duration =
+      var duration =
           start <= end ? end - start : minutesPerDay - start + end;
       arcs.add(_NavArc(
         startMinutes: start.toDouble(),
@@ -81,11 +88,13 @@ class _PolarNavPainter extends CustomPainter {
   final Color color;
   final List<_NavArc> arcs;
   final bool selected;
+  final PolarClockLook look;
 
   _PolarNavPainter({
     required this.color,
     required this.arcs,
     required this.selected,
+    required this.look,
   });
 
   @override
@@ -117,11 +126,12 @@ class _PolarNavPainter extends CustomPainter {
     for (final arc in arcs) {
       final innerEdge = inner + arc.lane * (trackWidth + gap);
       final radius = innerEdge + trackWidth / 2;
-      final sweep = (arc.durationMinutes / (24 * 60)) * 2 * math.pi;
+      final sweep =
+          (arc.durationMinutes / look.cycleMinutes) * 2 * math.pi;
       if (sweep < 0.04) continue;
       canvas.drawArc(
         Rect.fromCircle(center: c, radius: radius),
-        PolarClockPainter.angleForMinutes(arc.startMinutes),
+        PolarClockPainter.angleForMinutes(arc.startMinutes, look: look),
         sweep,
         false,
         paint,
@@ -131,7 +141,9 @@ class _PolarNavPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PolarNavPainter oldDelegate) {
-    if (oldDelegate.color != color || oldDelegate.selected != selected) {
+    if (oldDelegate.color != color ||
+        oldDelegate.selected != selected ||
+        oldDelegate.look != look) {
       return true;
     }
     if (oldDelegate.arcs.length != arcs.length) return true;

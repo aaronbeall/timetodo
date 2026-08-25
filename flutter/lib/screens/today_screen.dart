@@ -28,6 +28,7 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> {
   static const _minClock = 76.0;
+  static const _dockLead = 44.0;
   /// Fan-out may start once this much of the stack (from its top) is on-screen.
   static const _fanStartCapItems = 2.0;
   /// Scroll distance over which the stack goes from collapsed to fully fanned.
@@ -103,17 +104,6 @@ class _TodayScreenState extends State<TodayScreen> {
         pos.maxScrollExtent,
       ),
     );
-  }
-
-  String _formatTimeNumber(TimeOfDay time) {
-    final hour =
-        time.hour > 12 ? time.hour - 12 : (time.hour == 0 ? 12 : time.hour);
-    final minute = time.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
-  }
-
-  String _formatTimePeriod(TimeOfDay time) {
-    return time.hour >= 12 ? 'PM' : 'AM';
   }
 
   String _ordinalSuffix(int day) {
@@ -583,16 +573,20 @@ class _TodayScreenState extends State<TodayScreen> {
                               .clamp(0.0, spacerHeight);
                           final size = remaining.clamp(_minClock, maxClock);
                           final docked = remaining <= _minClock;
-                          final frameT = docked ? 1.0 : 0.0;
+                          final dockRaw =
+                              ((_dockLead - (size - _minClock)) / _dockLead)
+                                  .clamp(0.0, 1.0);
+                          final frameT =
+                              Curves.easeInOutCubic.transform(dockRaw);
                           final bezel = frameInset * 2 * frameT;
                           final left =
                               (constraints.maxWidth - size - bezel) / 2;
-                          final top = docked
-                              ? pipPad
-                              : math.max(
-                                  0.0,
-                                  (remaining - size - bezel) / 2,
-                                );
+                          final centeredTop = math.max(
+                            0.0,
+                            (remaining - size - bezel) / 2,
+                          );
+                          final top = centeredTop +
+                              (pipPad - centeredTop) * frameT;
                           final timeScale =
                               (size / maxClock).clamp(0.42, 1.0);
                           final theme = Theme.of(context);
@@ -640,6 +634,7 @@ class _TodayScreenState extends State<TodayScreen> {
                                               currentTime: _currentTime,
                                               tasks: todayTasks,
                                               size: size,
+                                              hourLabelOpacity: 1 - frameT,
                                               onTaskTap: docked
                                                   ? null
                                                   : _showSummary,
@@ -663,13 +658,11 @@ class _TodayScreenState extends State<TodayScreen> {
                                               left: 0,
                                               right: 0,
                                               height: size,
-                                              child: IgnorePointer(
-                                                child: Center(
-                                                  child: Transform.scale(
-                                                    scale: timeScale,
-                                                    child: _buildClockCenter(
-                                                      context,
-                                                    ),
+                                              child: Center(
+                                                child: Transform.scale(
+                                                  scale: timeScale,
+                                                  child: _buildClockCenter(
+                                                    context,
                                                   ),
                                                 ),
                                               ),
@@ -753,14 +746,10 @@ class _TodayScreenState extends State<TodayScreen> {
       fontWeight: FontWeight.w600,
       color: color.withValues(alpha: 0.55),
     );
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(_formatTimeNumber(_currentTime), style: baseStyle),
-        const SizedBox(height: 4),
-        Text(_formatTimePeriod(_currentTime), style: periodStyle),
-      ],
+    return PolarClockHub(
+      time: _currentTime,
+      timeStyle: baseStyle,
+      periodStyle: periodStyle,
     );
   }
 

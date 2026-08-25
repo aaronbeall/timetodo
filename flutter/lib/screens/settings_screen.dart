@@ -1,11 +1,17 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:timetodo/app_navigation.dart';
 import 'package:timetodo/data/demo_schedule.dart';
+import 'package:timetodo/models/scheduled_task.dart';
+import 'package:timetodo/models/task.dart';
+import 'package:timetodo/providers/polar_clock_settings.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/providers/theme_controller.dart';
+import 'package:timetodo/providers/time_format_settings.dart';
 import 'package:timetodo/screens/about_screen.dart';
 import 'package:timetodo/widgets/change_toast.dart';
+import 'package:timetodo/widgets/polar_clock.dart';
 
 void openSettings(BuildContext context) {
   Navigator.of(context).push(
@@ -20,6 +26,7 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final themeController = context.watch<ThemeController>();
+    final timeFormat = context.watch<TimeFormatSettings>();
     final tasks = context.watch<TaskProvider>();
 
     return Scaffold(
@@ -56,6 +63,37 @@ class SettingsScreen extends StatelessWidget {
                   themeController.setMode(value.first),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Text(
+              'Time',
+              style: theme.textTheme.bodyLarge,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: SegmentedButton<TimeFormatMode>(
+              segments: const [
+                ButtonSegment(
+                  value: TimeFormatMode.system,
+                  label: Text('System'),
+                ),
+                ButtonSegment(
+                  value: TimeFormatMode.h12,
+                  label: Text('12-hour'),
+                ),
+                ButtonSegment(
+                  value: TimeFormatMode.h24,
+                  label: Text('24-hour'),
+                ),
+              ],
+              selected: {timeFormat.mode},
+              onSelectionChanged: (value) => timeFormat.setMode(value.first),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _sectionLabel(theme, 'Polar clock'),
+          _PolarClockSettings(),
           const SizedBox(height: 16),
           _sectionLabel(theme, 'Data'),
           ListTile(
@@ -168,6 +206,233 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PolarClockSettings extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final polar = context.watch<PolarClockSettings>();
+    final look = polar.look;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Center(
+            child: SizedBox(
+              width: 168,
+              height: 168,
+              child: IgnorePointer(
+                child: PolarClock(
+                  currentTime: const TimeOfDay(hour: 10, minute: 24),
+                  tasks: _polarPreviewTasks(),
+                  size: 168,
+                  animate: false,
+                  showNow: false,
+                ),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Time of day labels',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('None')),
+                  ButtonSegment(value: 4, label: Text('4')),
+                  ButtonSegment(value: 8, label: Text('8')),
+                  ButtonSegment(value: 12, label: Text('12')),
+                ],
+                selected: {look.hourLabels},
+                onSelectionChanged: (value) {
+                  if (value.isEmpty) return;
+                  polar.setHourLabels(value.first);
+                },
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '12 o’clock position',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<PolarClockOrigin>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: PolarClockOrigin.left,
+                    icon: _OriginGlyph(PolarClockOrigin.left),
+                    tooltip: 'Left',
+                  ),
+                  ButtonSegment(
+                    value: PolarClockOrigin.top,
+                    icon: _OriginGlyph(PolarClockOrigin.top),
+                    tooltip: 'Top',
+                  ),
+                  ButtonSegment(
+                    value: PolarClockOrigin.right,
+                    icon: _OriginGlyph(PolarClockOrigin.right),
+                    tooltip: 'Right',
+                  ),
+                  ButtonSegment(
+                    value: PolarClockOrigin.bottom,
+                    icon: _OriginGlyph(PolarClockOrigin.bottom),
+                    tooltip: 'Bottom',
+                  ),
+                ],
+                selected: {look.origin},
+                onSelectionChanged: (value) {
+                  if (value.isEmpty) return;
+                  polar.setOrigin(value.first);
+                },
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'One full circle is',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: false, label: Text('24 hours')),
+                  ButtonSegment(value: true, label: Text('12 hours')),
+                ],
+                selected: {look.hours12},
+                onSelectionChanged: (value) {
+                  if (value.isEmpty) return;
+                  polar.setHours12(value.first);
+                },
+              ),
+            ],
+          ),
+        ),
+        SwitchListTile(
+          title: const Text('Track background'),
+          value: look.trackBackground,
+          onChanged: polar.setTrackBackground,
+        ),
+        SwitchListTile(
+          title: const Text('12 o’clock line'),
+          value: look.originLine,
+          onChanged: polar.setOriginLine,
+        ),
+      ],
+    );
+  }
+}
+
+class _OriginGlyph extends StatelessWidget {
+  final PolarClockOrigin origin;
+
+  const _OriginGlyph(this.origin);
+
+  @override
+  Widget build(BuildContext context) {
+    final color = IconTheme.of(context).color ??
+        Theme.of(context).colorScheme.onSurface;
+    return SizedBox(
+      width: 22,
+      height: 22,
+      child: CustomPaint(
+        painter: _OriginGlyphPainter(origin: origin, color: color),
+      ),
+    );
+  }
+}
+
+class _OriginGlyphPainter extends CustomPainter {
+  final PolarClockOrigin origin;
+  final Color color;
+
+  _OriginGlyphPainter({required this.origin, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.shortestSide / 2 - 1.2;
+    final ring = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.35;
+    canvas.drawCircle(c, r, ring);
+
+    final angle = switch (origin) {
+      PolarClockOrigin.left => math.pi,
+      PolarClockOrigin.top => -math.pi / 2,
+      PolarClockOrigin.right => 0.0,
+      PolarClockOrigin.bottom => math.pi / 2,
+    };
+    final inner = Offset(
+      c.dx + math.cos(angle) * r * 0.42,
+      c.dy + math.sin(angle) * r * 0.42,
+    );
+    final outer = Offset(
+      c.dx + math.cos(angle) * r,
+      c.dy + math.sin(angle) * r,
+    );
+    final tick = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(inner, outer, tick);
+    canvas.drawCircle(
+      outer,
+      2.1,
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _OriginGlyphPainter oldDelegate) {
+    return oldDelegate.origin != origin || oldDelegate.color != color;
+  }
+}
+
+List<ScheduledTask> _polarPreviewTasks() {
+  final day = DateTime(2026, 1, 1);
+  ScheduledTask band(String id, Color color, int startHour, int endHour) {
+    return ScheduledTask(
+      task: Task(
+        id: id,
+        label: id,
+        color: color,
+        startTime: TimeOfDay(hour: startHour, minute: 0),
+        endTime: TimeOfDay(hour: endHour, minute: 0),
+        startDate: day,
+      ),
+      date: day,
+    );
+  }
+
+  return [
+    band('preview-a', const Color(0xFF5B8DEF), 0, 16),
+    band('preview-b', const Color(0xFF34C759), 8, 20),
+    band('preview-c', const Color(0xFFFF9F0A), 14, 22),
+  ];
 }
 
 void _stub(BuildContext context, String message) {

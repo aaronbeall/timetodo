@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/time_utils.dart';
@@ -83,19 +84,9 @@ List<TimelineBlock> layoutTimeline(List<ScheduledTask> tasks) {
   ];
 }
 
-String formatHourLabel(int hour) => formatAxisTime(hour * 60);
+String formatHourLabel(int hour, {required bool use24Hour}) =>
+    formatAxisTime(hour * 60, use24Hour: use24Hour);
 
-String formatAxisTime(int minutes) {
-  if (minutes <= 0 || minutes >= kMinutesPerDay) {
-    return '12 AM';
-  }
-  final h = (minutes ~/ 60) % 24;
-  final m = minutes % 60;
-  final display = h == 0 ? 12 : (h > 12 ? h - 12 : h);
-  final period = h >= 12 ? 'PM' : 'AM';
-  if (m == 0) return '$display $period';
-  return '$display:${m.toString().padLeft(2, '0')} $period';
-}
 
 List<int> axisMarkMinutes(List<ScheduledTask> tasks) {
   final marks = <int>{};
@@ -198,6 +189,15 @@ class CalendarEventBlock extends StatelessWidget {
   }
 }
 
+double axisOffsetY(int minutes, double hourHeight) {
+  if (minutes >= kMinutesPerDay) return hourHeight * 24;
+  if (minutes <= 0) return 0;
+  return (minutes / 60) * hourHeight;
+}
+
+/// Half the axis hour-digit height; the number sits on the hairline.
+const kAxisNumberHalf = 5.0;
+
 class DayTimeline extends StatelessWidget {
   final List<ScheduledTask> tasks;
   final double hourHeight;
@@ -205,6 +205,7 @@ class DayTimeline extends StatelessWidget {
   final int? nowMinutes;
   final bool compact;
   final ValueChanged<ScheduledTask>? onTaskTap;
+  final List<int>? axisMarks;
 
   const DayTimeline({
     super.key,
@@ -214,6 +215,7 @@ class DayTimeline extends StatelessWidget {
     this.nowMinutes,
     this.compact = false,
     this.onTaskTap,
+    this.axisMarks,
   });
 
   @override
@@ -221,6 +223,8 @@ class DayTimeline extends StatelessWidget {
     final blocks = layoutTimeline(tasks);
     final height = hourHeight * 24;
     final theme = Theme.of(context);
+    final marks = axisMarks ??
+        spaceAxisMarks(axisMarkMinutes(tasks), hourHeight: hourHeight);
     return SizedBox(
       height: height,
       child: LayoutBuilder(
@@ -229,16 +233,15 @@ class DayTimeline extends StatelessWidget {
           return Stack(
             clipBehavior: Clip.none,
             children: [
-              for (var h = 0; h < 24; h++)
-                Positioned(
-                  top: h * hourHeight,
-                  left: 0,
-                  right: 0,
-                  child: Divider(
-                    height: 1,
-                    color: theme.dividerColor.withValues(alpha: 0.1),
-                  ),
+              CustomPaint(
+                size: Size(colW, height),
+                painter: _AxisHairlinePainter(
+                  marks: marks,
+                  hourHeight: hourHeight,
+                  blocks: blocks,
+                  color: theme.dividerColor.withValues(alpha: 0.28),
                 ),
+              ),
               for (final block in blocks)
                 _event(context, block, height, colW),
               if (nowMinutes != null)
@@ -262,20 +265,121 @@ class DayTimeline extends StatelessWidget {
     double dayHeight,
     double totalWidth,
   ) {
-    final top = (block.startMin / kMinutesPerDay) * dayHeight;
-    final h = ((block.endMin - block.startMin) / kMinutesPerDay) * dayHeight;
-    final laneW = totalWidth / block.lanes;
+    final box = timelineEventBox(block, dayHeight, totalWidth);
     return Positioned(
-      top: top,
-      height: h.clamp(12.0, dayHeight),
-      left: block.lane * laneW + 1,
-      width: (laneW - 2).clamp(4.0, totalWidth),
+      top: box.top,
+      height: box.height,
+      left: box.left,
+      width: box.width,
       child: CalendarEventBlock(
         task: block.task,
         compact: compact,
         onTap: onTaskTap == null ? null : () => onTaskTap!(block.task),
       ),
     );
+  }
+}
+
+Rect timelineEventBox(TimelineBlock block, double dayHeight, double totalWidth) {
+  final top = (block.startMin / kMinutesPerDay) * dayHeight;
+  final h = ((block.endMin - block.startMin) / kMinutesPerDay) * dayHeight;
+  final laneW = totalWidth / block.lanes;
+  return Rect.fromLTWH(
+    block.lane * laneW + 1,
+    top,
+    (laneW - 2).clamp(4.0, totalWidth),
+    h.clamp(12.0, dayHeight),
+  );
+}
+
+class _AxisHairlinePainter extends CustomPainter {
+  final List<int> marks;
+  final double hourHeight;
+  final List<TimelineBlock> blocks;
+  final Color color;
+
+  _AxisHairlinePainter({
+    required this.marks,
+    required this.hourHeight,
+    required this.blocks,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.25
+      ..strokeCap = StrokeCap.round;
+    final dayHeight = hourHeight * 24;
+    for (final minutes in marks) {
+      final y = axisOffsetY(minutes, hourHeight);
+      final gaps = _occupiedX(y, size.width, dayHeight);
+      var x = 0.0;
+      for (final span in gaps) {
+        if (span.start > x + 0.5) {
+          _drawDotted(canvas, x, span.start, y, paint);
+        }
+        if (span.end > x) x = span.end;
+      }
+      if (x < size.width - 0.5) {
+        _drawDotted(canvas, x, size.width, y, paint);
+      }
+    }
+  }
+
+  static void _drawDotted(
+    Canvas canvas,
+    double from,
+    double to,
+    double y,
+    Paint paint,
+  ) {
+    const dash = 2.0;
+    const gap = 3.0;
+    var x = from;
+    while (x < to) {
+      final end = x + dash > to ? to : x + dash;
+      if (end - x > 0.4) {
+        canvas.drawLine(Offset(x, y), Offset(end, y), paint);
+      }
+      x += dash + gap;
+    }
+  }
+
+  List<({double start, double end})> _occupiedX(
+    double y,
+    double width,
+    double dayHeight,
+  ) {
+    final raw = <({double start, double end})>[];
+    for (final block in blocks) {
+      final box = timelineEventBox(block, dayHeight, width);
+      if (y < box.top || y > box.bottom) continue;
+      raw.add((start: box.left, end: box.right));
+    }
+    raw.sort((a, b) => a.start.compareTo(b.start));
+    final merged = <({double start, double end})>[];
+    for (final span in raw) {
+      if (merged.isEmpty || span.start > merged.last.end) {
+        merged.add(span);
+      } else {
+        final last = merged.removeLast();
+        merged.add((
+          start: last.start,
+          end: span.end > last.end ? span.end : last.end,
+        ));
+      }
+    }
+    return merged;
+  }
+
+  @override
+  bool shouldRepaint(covariant _AxisHairlinePainter oldDelegate) {
+    return oldDelegate.hourHeight != hourHeight ||
+        oldDelegate.color != color ||
+        oldDelegate.marks != marks ||
+        oldDelegate.blocks != blocks;
   }
 }
 
@@ -369,7 +473,10 @@ class ScheduleNowBar extends StatelessWidget {
             SizedBox(
               width: 40,
               child: AxisCaption(
-                text: formatAxisTime(minutesOf(now)),
+                text: formatAxisTime(
+                  minutesOf(now),
+                  use24Hour: MediaQuery.alwaysUse24HourFormatOf(context),
+                ),
                 twoLine: true,
               ),
             ),
@@ -436,19 +543,19 @@ class AxisCaption extends StatelessWidget {
 class HourRail extends StatelessWidget {
   final double hourHeight;
   final List<ScheduledTask> tasks;
+  final List<int>? marks;
 
   const HourRail({
     super.key,
     required this.hourHeight,
     this.tasks = const [],
+    this.marks,
   });
 
   @override
   Widget build(BuildContext context) {
-    final marks = spaceAxisMarks(
-      axisMarkMinutes(tasks),
-      hourHeight: hourHeight,
-    );
+    final marks = this.marks ??
+        spaceAxisMarks(axisMarkMinutes(tasks), hourHeight: hourHeight);
     return SizedBox(
       width: kHourRailWidth,
       height: hourHeight * 24,
@@ -457,13 +564,14 @@ class HourRail extends StatelessWidget {
         children: [
           for (final minutes in marks)
             Positioned(
-              top: minutes >= kMinutesPerDay
-                  ? hourHeight * 24 - 20
-                  : (minutes / 60) * hourHeight - 10,
+              top: axisOffsetY(minutes, hourHeight) - kAxisNumberHalf,
               left: 0,
               right: 4,
               child: AxisCaption(
-                text: formatAxisTime(minutes),
+                text: formatAxisTime(
+                  minutes,
+                  use24Hour: MediaQuery.alwaysUse24HourFormatOf(context),
+                ),
                 twoLine: true,
               ),
             ),
@@ -471,6 +579,179 @@ class HourRail extends StatelessWidget {
       ),
     );
   }
+}
+
+class WeekAllDayLane extends StatelessWidget {
+  final List<DateTime> days;
+  final List<List<ScheduledTask>> perDay;
+  final ValueChanged<ScheduledTask>? onTaskTap;
+
+  const WeekAllDayLane({
+    super.key,
+    required this.days,
+    required this.perDay,
+    this.onTaskTap,
+  });
+
+  static double heightFor(List<List<ScheduledTask>> perDay) {
+    return AllDayStack.heightFor(_pack(_spans(perDay)).length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final packed = _pack(_spans(perDay));
+    final height = AllDayStack.heightFor(packed.length);
+    return SizedBox(
+      height: height,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final inner = math.max(
+            0.0,
+            constraints.maxWidth - kHourRailWidth * 2,
+          );
+          final colW = inner / days.length;
+          return Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned(
+                left: 0,
+                width: kHourRailWidth,
+                top: 0,
+                bottom: 0,
+                child: const Padding(
+                  padding: EdgeInsets.only(right: 4, top: 6),
+                  child: AxisCaption(text: 'All day'),
+                ),
+              ),
+              for (var i = 0; i < days.length; i++)
+                Positioned(
+                  left: kHourRailWidth + i * colW,
+                  width: colW,
+                  top: 0,
+                  bottom: 0,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: isSameDay(days[i], DateTime.now())
+                          ? Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.07)
+                          : null,
+                    ),
+                  ),
+                ),
+              for (final placed in packed)
+                Positioned(
+                  left: kHourRailWidth + placed.start * colW + 2,
+                  width: (placed.end - placed.start + 1) * colW - 4,
+                  top: 2 + placed.lane * kAllDayRowHeight,
+                  height: kAllDayRowHeight - 4,
+                  child: CalendarEventBlock(
+                    task: placed.task,
+                    compact: true,
+                    onTap: onTaskTap == null
+                        ? null
+                        : () => onTaskTap!(placed.task),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  static List<_WeekAllDaySpan> _spans(List<List<ScheduledTask>> perDay) {
+    final indexes = <String, List<int>>{};
+    final sample = <String, ScheduledTask>{};
+    for (var i = 0; i < perDay.length; i++) {
+      for (final task in allDayTasks(perDay[i])) {
+        indexes.putIfAbsent(task.id, () => []).add(i);
+        sample.putIfAbsent(task.id, () => task);
+      }
+    }
+    final spans = <_WeekAllDaySpan>[];
+    for (final id in indexes.keys) {
+      final days = [...indexes[id]!]..sort();
+      var runStart = days.first;
+      var prev = days.first;
+      for (var k = 1; k <= days.length; k++) {
+        final cur = k == days.length ? null : days[k];
+        if (cur == prev + 1) {
+          prev = cur!;
+          continue;
+        }
+        spans.add(
+          _WeekAllDaySpan(task: sample[id]!, start: runStart, end: prev),
+        );
+        if (cur != null) {
+          runStart = cur;
+          prev = cur;
+        }
+      }
+    }
+    return spans;
+  }
+
+  static List<_WeekAllDayPlaced> _pack(List<_WeekAllDaySpan> spans) {
+    final sorted = [...spans]..sort((a, b) {
+      final byLen = (b.end - b.start).compareTo(a.end - a.start);
+      if (byLen != 0) return byLen;
+      return a.start.compareTo(b.start);
+    });
+    final laneEnds = <int>[];
+    final placed = <_WeekAllDayPlaced>[];
+    for (final span in sorted) {
+      var lane = -1;
+      for (var i = 0; i < laneEnds.length; i++) {
+        if (laneEnds[i] < span.start) {
+          lane = i;
+          break;
+        }
+      }
+      if (lane == -1) {
+        lane = laneEnds.length;
+        laneEnds.add(span.end);
+      } else {
+        laneEnds[lane] = span.end;
+      }
+      placed.add(
+        _WeekAllDayPlaced(
+          task: span.task,
+          start: span.start,
+          end: span.end,
+          lane: lane,
+        ),
+      );
+    }
+    return placed;
+  }
+}
+
+class _WeekAllDaySpan {
+  final ScheduledTask task;
+  final int start;
+  final int end;
+
+  const _WeekAllDaySpan({
+    required this.task,
+    required this.start,
+    required this.end,
+  });
+}
+
+class _WeekAllDayPlaced {
+  final ScheduledTask task;
+  final int start;
+  final int end;
+  final int lane;
+
+  const _WeekAllDayPlaced({
+    required this.task,
+    required this.start,
+    required this.end,
+    required this.lane,
+  });
 }
 
 class AllDayStack extends StatelessWidget {

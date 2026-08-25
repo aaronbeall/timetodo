@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:timetodo/data/local_task_store.dart';
 import 'package:timetodo/providers/task_provider.dart';
+import 'package:timetodo/providers/polar_clock_settings.dart';
+import 'package:timetodo/providers/time_format_settings.dart';
 import 'package:timetodo/providers/theme_controller.dart';
 import 'package:timetodo/screens/today_screen.dart';
 import 'package:timetodo/screens/tasks_screen.dart';
@@ -49,14 +51,28 @@ class TimeToDoApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(
           create: (_) {
+            final format = TimeFormatSettings();
+            format.load();
+            return format;
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            final polar = PolarClockSettings();
+            polar.load();
+            return polar;
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
             final provider = TaskProvider(LocalTaskStore());
             provider.load();
             return provider;
           },
         ),
       ],
-      child: Consumer<ThemeController>(
-        builder: (context, theme, _) {
+      child: Consumer2<ThemeController, TimeFormatSettings>(
+        builder: (context, theme, timeFormat, _) {
           return MaterialApp(
             title: 'TimeToDo',
             theme: ThemeData(
@@ -77,6 +93,17 @@ class TimeToDoApp extends StatelessWidget {
             ),
             themeMode: theme.mode,
             scaffoldMessengerKey: appMessengerKey,
+            builder: (context, child) {
+              final system24 =
+                  MediaQuery.alwaysUse24HourFormatOf(context);
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  alwaysUse24HourFormat:
+                      timeFormat.resolve24Hour(system24),
+                ),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             home: const MainScreen(),
           );
         },
@@ -119,6 +146,9 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _goToTab(int index, {bool fromNotifier = false}) {
+    if (index == 0) {
+      context.read<PolarClockSettings>().followLiveMeridian();
+    }
     if (index == _currentIndex) {
       if (index == 1) {
         setState(() => _tasksFocusTick++);
