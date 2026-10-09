@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:timetodo/models/scheduled_task.dart';
 import 'package:timetodo/providers/polar_clock_settings.dart';
 import 'package:timetodo/time_utils.dart';
+import 'package:timetodo/widgets/dismissible_hint_tooltip.dart';
 
 class _TaskRange {
   final ScheduledTask task;
@@ -148,6 +149,7 @@ class _PolarClockState extends State<PolarClock>
   double? _draftDuration;
   _MoveGrab? _grab;
   _MoveGrab? _pendingLabel;
+  bool _enteredByLongPress = false;
   Offset? _pointerDownPos;
   double _grabStart = 0;
   double _grabDuration = 0;
@@ -210,7 +212,11 @@ class _PolarClockState extends State<PolarClock>
         _draftStart = null;
         _draftDuration = null;
         _grab = null;
+        _enteredByLongPress = false;
       } else {
+        if (_sessionId != widget.movingTaskId) {
+          _enteredByLongPress = false;
+        }
         _sessionId = widget.movingTaskId;
         if (_draftStart == null) {
           _primeDraft(widget.movingTaskId!);
@@ -344,6 +350,7 @@ class _PolarClockState extends State<PolarClock>
       return;
     }
     HapticFeedback.mediumImpact();
+    _enteredByLongPress = true;
     _sessionId = id;
     _primeDraft(id);
     _syncArcs(reduce: MediaQuery.disableAnimationsOf(context));
@@ -529,6 +536,7 @@ class _PolarClockState extends State<PolarClock>
       _draftStart = null;
       _draftDuration = null;
       _grab = null;
+      _enteredByLongPress = false;
     });
   }
 
@@ -538,6 +546,7 @@ class _PolarClockState extends State<PolarClock>
       _draftStart = null;
       _draftDuration = null;
       _grab = null;
+      _enteredByLongPress = false;
     });
     widget.onMoveCancel?.call();
   }
@@ -672,26 +681,38 @@ class _PolarClockState extends State<PolarClock>
               if (_isMoving && !widget.liveEdit)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Column(
                     children: [
-                      TextButton(
-                        onPressed: _cancelMove,
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          foregroundColor: scheme.onSurfaceVariant,
-                        ),
-                        child: const Text('Cancel'),
+                      DismissibleHintTooltip(
+                        prefsKey: DismissibleHintTooltip.reshapeLongPressKey,
+                        show: !_enteredByLongPress,
+                        message:
+                            'Next time, long-press an arc to reshape',
                       ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _commitMove,
-                        style: FilledButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          minimumSize: const Size(0, 36),
-                        ),
-                        child: const Text('Save'),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton(
+                            onPressed: _cancelMove,
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              foregroundColor: scheme.onSurfaceVariant,
+                            ),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton(
+                            onPressed: _commitMove,
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                              ),
+                              minimumSize: const Size(0, 36),
+                            ),
+                            child: const Text('Save'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
