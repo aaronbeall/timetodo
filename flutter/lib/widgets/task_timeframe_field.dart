@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:timetodo/time_utils.dart';
+import 'package:timetodo/widgets/reshape_arc_icon.dart';
 
 class TaskTimeframeField extends StatelessWidget {
   final bool isAllDay;
@@ -34,6 +35,7 @@ class TaskTimeframeField extends StatelessWidget {
         : null;
 
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    final move = onMove;
     return Column(
       children: [
         if (showAllDayToggle && onAllDayChanged != null)
@@ -52,18 +54,14 @@ class TaskTimeframeField extends StatelessWidget {
               value: _rangeLabel(context),
               onTap: () => _pickTimeframe(context),
               onResetTimes: onResetTimes,
-              action: onMove == null
+              action: move == null
                   ? null
-                  : FilledButton.tonalIcon(
-                      onPressed: onMove,
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
-                        minimumSize: const Size(0, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: const Icon(Icons.open_with_rounded, size: 16),
-                      label: const Text('Move'),
+                  : _secondaryAction(
+                      context,
+                      icon: const ReshapeArcIcon(size: 16),
+                      label: 'Reshape',
+                      tooltip: 'Drag the arc on the clock',
+                      onPressed: move,
                     ),
             ),
             if (duration != null)
@@ -154,17 +152,15 @@ class TaskTimeframeField extends StatelessWidget {
           ),
           if (action != null) action,
           if (onResetTimes != null)
-            IconButton(
+            _secondaryAction(
+              context,
+              icon: const Icon(Icons.restart_alt_rounded, size: 16),
+              label: 'Reset',
               tooltip: 'Reset to task time',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(
-                minWidth: 32,
-                minHeight: 32,
-              ),
-              icon: const Icon(Icons.restart_alt_rounded, size: 18),
               onPressed: onResetTimes,
             ),
+          if (action != null || onResetTimes != null)
+            const SizedBox(width: 8),
           InkWell(
             onTap: onTap,
             child: Padding(
@@ -181,6 +177,31 @@ class TaskTimeframeField extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _secondaryAction(
+    BuildContext context, {
+    required Widget icon,
+    required String label,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Tooltip(
+      message: tooltip,
+      child: TextButton.icon(
+        onPressed: onPressed,
+        icon: icon,
+        label: Text(label),
+        style: TextButton.styleFrom(
+          foregroundColor: muted,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.fromLTRB(8, 0, 10, 0),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       ),
     );
   }
