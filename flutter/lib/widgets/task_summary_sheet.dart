@@ -10,7 +10,6 @@ import 'package:timetodo/models/task_occurrence.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/change_toast.dart';
-import 'package:timetodo/widgets/dismissible_hint_tooltip.dart';
 import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_repeat_field.dart';
 import 'package:timetodo/widgets/task_time_arc.dart';
@@ -51,12 +50,14 @@ Future<void> showTaskSummarySheet(
     },
   );
   if (!context.mounted) return;
+  // Save anything changed in the sheet first, so tapping Reshape or Edit task
+  // never silently drops a status or time edit.
+  final undo = _commitDraft(context, task, draft);
   if (startMove) {
     onMove?.call();
-    return;
+  } else if (openParent) {
+    onEdit();
   }
-  final undo = _commitDraft(context, task, draft);
-  if (openParent) onEdit();
   if (undo != null) {
     showChangeToast(
       context,
@@ -148,7 +149,7 @@ VoidCallback? _commitDraft(
 
 String _commitMessage(String label, _OccurrenceDraft draft) {
   if (draft.applyFollowing && !draft.writesStatus) {
-    return 'Applied this timeframe to this and later $label';
+    return 'Updated $label from this day on';
   }
   if (draft.writesStatus && !draft.timesChanged && !draft.applyFollowing) {
     return switch (draft.status) {
@@ -446,9 +447,8 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                   icon: const Icon(Icons.event_repeat_outlined),
                   label: Text(
                     draft.applyFollowing
-                        ? 'This and later occurrences will use this timeframe'
-                        : 'Apply this timeframe to this and later occurrences',
-                    textAlign: TextAlign.center,
+                        ? 'Applies to this and later'
+                        : 'Apply to this and later',
                   ),
                   style: draft.applyFollowing
                       ? FilledButton.styleFrom(
@@ -516,13 +516,6 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                 });
               },
             ),
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.only(top: 8),
-          child: DismissibleHintTooltip(
-            prefsKey: DismissibleHintTooltip.reshapeLongPressKey,
-            message: 'Next time, long-press an arc to reshape',
           ),
         ),
       ],
@@ -635,6 +628,24 @@ bool _usesFutureStatus(
 _StatusChoice _statusOf(ScheduledTask task, TimeOfDay now) {
   if (task.isCompleted) return _StatusChoice.complete;
   if (task.isCanceled) return _StatusChoice.skipped;
+  // The time-of-day checks below only make sense for today. Without this, a
+  // 3–7 PM occurrence tomorrow reads as "expired" at 8 PM tonight.
+  final today = dateOnly(DateTime.now());
+  final day = dateOnly(task.date);
+  if (day.isAfter(today)) {
+    return task.isAllDay ? _StatusChoice.openAllDay : _StatusChoice.upcoming;
+  }
+  if (day.isBefore(today) && !task.isAllDay && task.startTime != null) {
+    // Yesterday's overnight occurrence (e.g. 10 PM–7 AM) can still be running.
+    final overnight = task.endTime != null &&
+        minutesOf(task.endTime!) < minutesOf(task.startTime!);
+    final yesterday =
+        day == DateTime(today.year, today.month, today.day - 1);
+    final runningOvernight = overnight && yesterday && task.isActive(now);
+    return runningOvernight
+        ? _StatusChoice.inProgress
+        : _StatusChoice.expired;
+  }
   if (task.isMissed(now)) return _StatusChoice.expired;
   if (task.isActive(now)) return _StatusChoice.inProgress;
   if (task.isAllDay) return _StatusChoice.openAllDay;

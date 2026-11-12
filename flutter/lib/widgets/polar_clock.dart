@@ -89,7 +89,25 @@ class _ArcGeom {
 enum _MoveGrab { body, start, end }
 
 class PolarClock extends StatefulWidget {
+  /// Height of the Cancel/Save row shown under the clock while moving.
   static const moveActionsExtent = 48.0;
+
+  /// Height reserved for the long-press tip above Cancel/Save.
+  static double moveHintExtent(BuildContext context) =>
+      MediaQuery.textScalerOf(context).scale(36) + 4;
+
+  /// Total height the move controls take below the clock. Hosts that reserve
+  /// space for the controls must use this so the controls never overlap the
+  /// content below. Pass the same [reshapeHint] given to the clock.
+  static double moveControlsExtent(
+    BuildContext context, {
+    bool reshapeHint = false,
+  }) {
+    final hint = reshapeHint &&
+        HintPrefs.isVisible(DismissibleHintTooltip.reshapeLongPressKey);
+    return moveActionsExtent + (hint ? moveHintExtent(context) : 0);
+  }
+
   final TimeOfDay currentTime;
   final List<ScheduledTask> tasks;
   final double size;
@@ -110,6 +128,10 @@ class PolarClock extends StatefulWidget {
   /// When true, ignore time labels and 12-hour span (always a 24-hour ring).
   final bool compactLook;
   final double? holeFraction;
+  /// Show the "long-press an arc" tip above Cancel/Save while moving. Hosts
+  /// set this when the move was started from a button rather than a
+  /// long-press on the clock.
+  final bool reshapeHint;
 
   const PolarClock({
     super.key,
@@ -129,6 +151,7 @@ class PolarClock extends StatefulWidget {
     this.hourLabelOpacity = 1,
     this.compactLook = false,
     this.holeFraction,
+    this.reshapeHint = false,
   });
 
   @override
@@ -149,7 +172,6 @@ class _PolarClockState extends State<PolarClock>
   double? _draftDuration;
   _MoveGrab? _grab;
   _MoveGrab? _pendingLabel;
-  bool _enteredByLongPress = false;
   Offset? _pointerDownPos;
   double _grabStart = 0;
   double _grabDuration = 0;
@@ -212,11 +234,7 @@ class _PolarClockState extends State<PolarClock>
         _draftStart = null;
         _draftDuration = null;
         _grab = null;
-        _enteredByLongPress = false;
       } else {
-        if (_sessionId != widget.movingTaskId) {
-          _enteredByLongPress = false;
-        }
         _sessionId = widget.movingTaskId;
         if (_draftStart == null) {
           _primeDraft(widget.movingTaskId!);
@@ -350,7 +368,6 @@ class _PolarClockState extends State<PolarClock>
       return;
     }
     HapticFeedback.mediumImpact();
-    _enteredByLongPress = true;
     _sessionId = id;
     _primeDraft(id);
     _syncArcs(reduce: MediaQuery.disableAnimationsOf(context));
@@ -536,7 +553,6 @@ class _PolarClockState extends State<PolarClock>
       _draftStart = null;
       _draftDuration = null;
       _grab = null;
-      _enteredByLongPress = false;
     });
   }
 
@@ -546,7 +562,6 @@ class _PolarClockState extends State<PolarClock>
       _draftStart = null;
       _draftDuration = null;
       _grab = null;
-      _enteredByLongPress = false;
     });
     widget.onMoveCancel?.call();
   }
@@ -683,12 +698,28 @@ class _PolarClockState extends State<PolarClock>
                   padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
                   child: Column(
                     children: [
-                      DismissibleHintTooltip(
-                        prefsKey: DismissibleHintTooltip.reshapeLongPressKey,
-                        show: !_enteredByLongPress,
-                        message:
-                            'Next time, long-press an arc to reshape',
-                      ),
+                      if (widget.reshapeHint)
+                        ValueListenableBuilder<bool?>(
+                          valueListenable: HintPrefs.dismissed(
+                            DismissibleHintTooltip.reshapeLongPressKey,
+                          ),
+                          builder: (context, dismissed, _) {
+                            if (dismissed != false) {
+                              return const SizedBox.shrink();
+                            }
+                            return SizedBox(
+                              height: PolarClock.moveHintExtent(context),
+                              child: const Padding(
+                                padding: EdgeInsets.only(bottom: 4),
+                                child: DismissibleHintTooltip(
+                                  prefsKey: DismissibleHintTooltip
+                                      .reshapeLongPressKey,
+                                  message: 'Next time, long-press an arc to reshape',
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -1808,7 +1839,7 @@ class PolarClockPainter extends CustomPainter {
     double width,
   ) {
     final backgroundPaint = Paint()
-      ..color = trackColor.withOpacity(0.25)
+      ..color = trackColor.withValues(alpha: 0.25)
       ..style = PaintingStyle.stroke
       ..strokeWidth = width
       ..strokeCap = StrokeCap.butt;
@@ -1838,7 +1869,7 @@ class PolarClockPainter extends CustomPainter {
     if (fillFraction <= 0) return;
 
     final filledPaint = Paint()
-      ..color = trackColor.withOpacity(0.7)
+      ..color = trackColor.withValues(alpha: 0.7)
       ..style = PaintingStyle.stroke
       ..strokeWidth = width
       ..strokeCap = StrokeCap.butt;
@@ -1865,7 +1896,7 @@ class PolarClockPainter extends CustomPainter {
     final sweep =
         ((segmentMinutes - gapMinutes) / _minutesPerDay) * 2 * math.pi;
     final paint = Paint()
-      ..color = trackColor.withOpacity(0.16)
+      ..color = trackColor.withValues(alpha: 0.16)
       ..style = PaintingStyle.fill;
 
     for (var i = 0; i < 3; i++) {
@@ -1900,7 +1931,7 @@ class PolarClockPainter extends CustomPainter {
     canvas.drawPath(
       _roundedTrackPath(center, radius, trackWidth, startAngle, sweepAngle),
       Paint()
-        ..color = arc.color.withOpacity(arc.opacity)
+        ..color = arc.color.withValues(alpha: arc.opacity)
         ..style = PaintingStyle.fill,
     );
 
@@ -1929,7 +1960,7 @@ class PolarClockPainter extends CustomPainter {
         remainingSweep,
       ),
       Paint()
-        ..color = arc.color.withOpacity(0.95)
+        ..color = arc.color.withValues(alpha: 0.95)
         ..style = PaintingStyle.fill,
     );
   }
@@ -1977,27 +2008,27 @@ class PolarClockPainter extends CustomPainter {
 
     canvas.drawRRect(
       shaft.inflate(2.5),
-      Paint()..color = nowOnColor.withOpacity(0.45),
+      Paint()..color = nowOnColor.withValues(alpha: 0.45),
     );
     canvas.drawRRect(
       shaft,
-      Paint()..color = nowColor.withOpacity(0.92),
+      Paint()..color = nowColor.withValues(alpha: 0.92),
     );
 
     canvas.drawCircle(
       Offset(tipCenter, 0),
       tipRadius + 1.6,
-      Paint()..color = nowOnColor.withOpacity(0.55),
+      Paint()..color = nowOnColor.withValues(alpha: 0.55),
     );
     canvas.drawCircle(
       Offset(tipCenter, 0),
       tipRadius,
-      Paint()..color = nowColor.withOpacity(0.95),
+      Paint()..color = nowColor.withValues(alpha: 0.95),
     );
     canvas.drawCircle(
       Offset(tipCenter, 0),
       tipRadius * 0.38,
-      Paint()..color = nowOnColor.withOpacity(0.9),
+      Paint()..color = nowOnColor.withValues(alpha: 0.9),
     );
 
     canvas.restore();
