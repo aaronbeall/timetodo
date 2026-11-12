@@ -124,58 +124,66 @@ class TaskTimeframeField extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
+    final actions = <Widget>[
+      if (action != null) action,
+      if (onResetTimes != null)
+        _secondaryAction(
+          context,
+          icon: const Icon(Icons.restart_alt_rounded, size: 16),
+          label: 'Reset',
+          tooltip: 'Reset to task time',
+          onPressed: onResetTimes,
+        ),
+    ];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: InkWell(
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Icon(icon, size: 18, color: muted),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: muted,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (action != null) action,
-          if (onResetTimes != null)
-            _secondaryAction(
-              context,
-              icon: const Icon(Icons.restart_alt_rounded, size: 16),
-              label: 'Reset',
-              tooltip: 'Reset to task time',
-              onPressed: onResetTimes,
-            ),
-          if (action != null || onResetTimes != null)
-            const SizedBox(width: 8),
           InkWell(
             onTap: onTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-              child: Text(
-                value,
-                textAlign: TextAlign.end,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: muted),
+                  const SizedBox(width: 10),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: theme.textTheme.bodyLarge?.copyWith(color: muted),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      value,
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                ],
               ),
             ),
           ),
+          // Secondary actions get their own line so they never squeeze the
+          // label or the time range on narrow screens.
+          if (actions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 22),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 4,
+                runSpacing: 4,
+                children: actions,
+              ),
+            ),
         ],
       ),
     );
