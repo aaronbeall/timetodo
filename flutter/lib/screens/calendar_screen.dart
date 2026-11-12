@@ -11,6 +11,7 @@ import 'package:timetodo/screens/settings_screen.dart';
 import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/calendar_timeline.dart';
 import 'package:timetodo/widgets/change_toast.dart';
+import 'package:timetodo/widgets/dismissible_hint_tooltip.dart';
 import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_list_item.dart';
 import 'package:timetodo/widgets/task_summary_sheet.dart';
@@ -57,6 +58,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   late DateTime _pageOrigin;
   late PageController _pager;
   String? _movingTaskId;
+  /// True when the current move began from the sheet's Reshape button.
+  bool _moveFromButton = false;
   final _docks = <String, _PolarDockScrollState>{};
 
   DateTime get _today => dateOnly(DateTime.now());
@@ -80,6 +83,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     super.initState();
     _pageOrigin = _periodAnchor(_focus);
     _pager = PageController(initialPage: _pageCenter);
+    HintPrefs.dismissed(DismissibleHintTooltip.reshapeLongPressKey)
+        .addListener(_onHintChanged);
   }
 
   @override
@@ -92,6 +97,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   @override
   void dispose() {
+    HintPrefs.dismissed(DismissibleHintTooltip.reshapeLongPressKey)
+        .removeListener(_onHintChanged);
     _pager.dispose();
     super.dispose();
   }
@@ -395,8 +402,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       onTaskTap: interactive ? _showOccurrence : null,
       enableMove: canMove,
       movingTaskId: canMove ? _movingTaskId : null,
+      reshapeHint: _moveFromButton,
       onMoveStart: (task) {
-        setState(() => _movingTaskId = task.id);
+        setState(() {
+          _movingTaskId = task.id;
+          _moveFromButton = false;
+        });
         _scrollToClock();
       },
       onMoveCancel: () => setState(() => _movingTaskId = null),
@@ -488,6 +499,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  // The reserved space under the clock depends on whether the reshape tip is
+  // visible, so rebuild when it loads or is dismissed.
+  void _onHintChanged() {
+    if (mounted) setState(() {});
+  }
+
   void _showOccurrence(ScheduledTask task) {
     final day = dateOnly(task.date);
     final canMove = !task.isAllDay &&
@@ -503,7 +520,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
       onEdit: () => widget.onEditTask?.call(task.task),
       onMove: canMove && hasCentralPolar
           ? () {
-              setState(() => _movingTaskId = task.id);
+              setState(() {
+                _movingTaskId = task.id;
+                _moveFromButton = true;
+              });
               _scrollToClock();
             }
           : null,
@@ -537,7 +557,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           color: Theme.of(context)
                               .colorScheme
                               .onSurface
-                              .withOpacity(0.5),
+                              .withValues(alpha: 0.5),
                         ),
                   ),
                 ),
@@ -702,15 +722,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final maxClock =
         (MediaQuery.sizeOf(context).width - 96).clamp(160.0, 280.0);
     final id = dateKey(dateOnly(day));
+    // Cancel/Save (and the tip) sit under the clock while moving; reserve
+    // their height and include it when centering.
+    final controlsExtent = _movingTaskId != null
+        ? PolarClock.moveControlsExtent(
+            context,
+            reshapeHint: _moveFromButton,
+          )
+        : 0.0;
     return _PolarDockScroll(
       key: ValueKey(id),
       dockId: id,
       onBind: _bindDock,
       onUnbind: _unbindDock,
       maxClock: maxClock,
-      spacerHeight: maxClock +
-          16 +
-          (_movingTaskId != null ? PolarClock.moveActionsExtent : 0),
+      controlsExtent: controlsExtent,
+      spacerHeight: maxClock + 16 + controlsExtent,
       lockScroll: _movingTaskId != null,
       onPrevious: () => _step(-1),
       onNext: () => _step(1),
@@ -1122,7 +1149,7 @@ class _MonthHeat extends StatelessWidget {
     final lead = first.weekday % 7;
     final days = DateTime(year, month + 1, 0).day;
     final primary = Theme.of(context).colorScheme.primary;
-    final empty = Theme.of(context).colorScheme.outlineVariant.withOpacity(0.35);
+    final empty = Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.35);
 
     return GridView.builder(
       physics: const NeverScrollableScrollPhysics(),
@@ -1149,7 +1176,7 @@ class _MonthHeat extends StatelessWidget {
                     ? primary.withValues(alpha: 0.22)
                     : n == 0
                         ? empty
-                        : primary.withOpacity(t),
+                        : primary.withValues(alpha: t),
                 border: today ? Border.all(color: primary, width: 1.5) : null,
               ),
             ),
@@ -1171,6 +1198,7 @@ class _PolarDockScroll extends StatefulWidget {
   final void Function(String id, _PolarDockScrollState state) onUnbind;
   final double maxClock;
   final double spacerHeight;
+  final double controlsExtent;
   final bool lockScroll;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
@@ -1184,6 +1212,7 @@ class _PolarDockScroll extends StatefulWidget {
     required this.onUnbind,
     required this.maxClock,
     required this.spacerHeight,
+    this.controlsExtent = 0,
     required this.lockScroll,
     required this.onPrevious,
     required this.onNext,
@@ -1285,7 +1314,10 @@ class _PolarDockScrollState extends State<_PolarDockScroll> {
                   .clamp(0.0, 1.0);
               final frameT = Curves.easeInOutCubic.transform(dockRaw);
               final bezel = frameInset * 2 * frameT;
-              final centeredTop = math.max(0.0, (remaining - size - bezel) / 2);
+              final centeredTop = math.max(
+                0.0,
+                (remaining - size - bezel - widget.controlsExtent) / 2,
+              );
               final top = centeredTop + (pipPad - centeredTop) * frameT;
               final theme = Theme.of(context);
 
@@ -1298,12 +1330,12 @@ class _PolarDockScrollState extends State<_PolarDockScroll> {
                   ),
                   borderRadius: BorderRadius.circular(8 + 10 * frameT),
                   border: Border.all(
-                    color: theme.colorScheme.onSurface.withOpacity(0.18 * frameT),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.18 * frameT),
                     width: 1.5 * frameT,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.22 * frameT),
+                      color: Colors.black.withValues(alpha: 0.22 * frameT),
                       blurRadius: 18 * frameT,
                       offset: Offset(0, 6 * frameT),
                     ),
