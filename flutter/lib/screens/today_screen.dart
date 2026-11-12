@@ -302,7 +302,7 @@ class _TodayScreenState extends State<TodayScreen> {
     if (undo != null) {
       showChangeToast(
         context,
-        message: 'Moved ${task.label}',
+        message: 'Reshaped ${task.label}',
         onUndo: undo,
       );
     }

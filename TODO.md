@@ -1,7 +1,7 @@
 # Engineering TODO
 
 Status: Living backlog  
-Last updated: 2026-08-24
+Last updated: 2026-08-25
 
 Strategy and market-facing order live in [docs/product-roadmap.md](docs/product-roadmap.md). This file is the **implementation gap list**: placeholders in the app, missing loop pieces, and quality holes. Strike items when they ship; add new gaps when they show up.
 
@@ -41,10 +41,14 @@ Related About copy already promises export/share as user-initiated (`flutter/lib
 - [ ] Year view is a heat map, not polar — decide if that is enough
 - [ ] Week/month miniature rings: still need a read on whether they communicate density or just decorate (roadmap research item)
 - [ ] Polar move: apply-to-future / series vs occurrence is easy to miss; confirm the sheet always makes the scope obvious
-- [ ] Occurrence sheet: spatial (polar) visualization of the occurrence, with the current **Move** action — consider renaming to **Reshape**
+- [x] Occurrence sheet: spatial polar + **Reshape** (was Move); long-press hint when reshape was not started from the clock
 - [ ] Reshape/move on Week, Month, and Year (no large polar in the main view): open a polar chart in a popover, sheet, or inlay so the drag still works
 - [ ] Search / jump-to-date in calendar
 - [ ] Timezone and travel-day handling
+
+## Tasks
+
+- [ ] Optional **task icons** (curated set, not freeform emoji dump): pick on create/edit; show in list rows, occurrence sheet, and as a small mark on polar arcs / compact rings so color-only days are easier to scan. Persist on `Task` (not per occurrence). Keep polar uncluttered at small sizes (hide or shrink on week/month chips).
 
 ## Stats
 
@@ -64,7 +68,18 @@ Related About copy already promises export/share as user-initiated (`flutter/lib
 
 ## Explicitly later (do not start unless a phase 1–2 item depends on it)
 
-From the roadmap “defer” and Pro lists: project hierarchies, team features, streaks-as-social, generic AI chat, habit-tracker mode, watch app, cross-device sync, day templates, advanced recurrence/batch edit, paid entitlements, extra themes/icons.
+From the roadmap “defer” and Pro lists: project hierarchies, team features, streaks-as-social, **generic AI chat** (keep deferred; see intelligence below), habit-tracker mode, watch app, cross-device sync, day templates, advanced recurrence/batch edit, paid entitlements, extra themes/icons.
+
+## Scheduling intelligence (later; not generic AI)
+
+Roadmap phase 3 and [positioning](docs/positioning.md): suggestions that show on the polar clock, optional and undoable, on-device when possible. Do **not** add a chatbot.
+
+- [ ] **Fit gaps:** when a task is displaced or unscheduled, highlight open arcs long enough to hold it; tap a gap to drop the task there
+- [ ] **Shift the rest:** preview sliding later tasks along the ring after a drag/extend; apply only on confirm
+- [ ] **Overfull / no-buffer cues:** mark overlaps, stacked duration past 24h, and missing travel/buffer between adjacent tasks without auto-reordering
+- [ ] **Local duration hints:** from this device’s history, offer a typical duration when creating or extending a named task (no cloud model required)
+- [ ] **Recovery layouts:** after skip/snooze/late start, offer 2–3 alternate day shapes (compact remaining work, protect a block, push to tomorrow) as polar previews
+- [ ] **Parse into an arc:** one-shot “Walk 30 min after lunch” → draft start/duration on the clock, user commits (speech or a single field—not a conversation)
 
 ## Research (not tickets, but they unblock design)
 

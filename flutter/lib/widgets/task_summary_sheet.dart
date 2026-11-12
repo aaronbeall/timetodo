@@ -10,6 +10,7 @@ import 'package:timetodo/models/task_occurrence.dart';
 import 'package:timetodo/providers/task_provider.dart';
 import 'package:timetodo/time_utils.dart';
 import 'package:timetodo/widgets/change_toast.dart';
+import 'package:timetodo/widgets/dismissible_hint_tooltip.dart';
 import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_repeat_field.dart';
 import 'package:timetodo/widgets/task_time_arc.dart';
@@ -147,7 +148,7 @@ VoidCallback? _commitDraft(
 
 String _commitMessage(String label, _OccurrenceDraft draft) {
   if (draft.applyFollowing && !draft.writesStatus) {
-    return 'Applied time to future $label';
+    return 'Applied this timeframe to this and later $label';
   }
   if (draft.writesStatus && !draft.timesChanged && !draft.applyFollowing) {
     return switch (draft.status) {
@@ -445,8 +446,9 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
                   icon: const Icon(Icons.event_repeat_outlined),
                   label: Text(
                     draft.applyFollowing
-                        ? 'Will apply to future'
-                        : 'Apply to future',
+                        ? 'This and later occurrences will use this timeframe'
+                        : 'Apply this timeframe to this and later occurrences',
+                    textAlign: TextAlign.center,
                   ),
                   style: draft.applyFollowing
                       ? FilledButton.styleFrom(
@@ -488,31 +490,42 @@ class _TaskSummarySheetState extends State<_TaskSummarySheet> {
     final now = TimeOfDay.now();
     final today = isSameDay(day, DateTime.now());
     const size = 240.0;
-    return Center(
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: PolarClock(
-          currentTime: now,
-          tasks: [...others, preview],
-          size: size,
-          animate: false,
-          showNow: today,
-          fullColor: true,
-          enableMove: true,
-          liveEdit: true,
-          movingTaskId: task.id,
-          onMoveCommit: (_, start, end) {
-            setState(() {
-              draft.startTime = start;
-              draft.endTime = end;
-              if (!draft.differsFromSeries) {
-                draft.applyFollowing = false;
-              }
-            });
-          },
+    return Column(
+      children: [
+        Center(
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: PolarClock(
+              currentTime: now,
+              tasks: [...others, preview],
+              size: size,
+              animate: false,
+              showNow: today,
+              fullColor: true,
+              enableMove: true,
+              liveEdit: true,
+              movingTaskId: task.id,
+              onMoveCommit: (_, start, end) {
+                setState(() {
+                  draft.startTime = start;
+                  draft.endTime = end;
+                  if (!draft.differsFromSeries) {
+                    draft.applyFollowing = false;
+                  }
+                });
+              },
+            ),
+          ),
         ),
-      ),
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: DismissibleHintTooltip(
+            prefsKey: DismissibleHintTooltip.reshapeLongPressKey,
+            message: 'Next time, long-press an arc to reshape',
+          ),
+        ),
+      ],
     );
   }
 }

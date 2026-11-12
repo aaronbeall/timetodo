@@ -421,7 +421,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (undo != null) {
       showChangeToast(
         context,
-        message: 'Moved ${task.label}',
+        message: 'Reshaped ${task.label}',
         onUndo: undo,
       );
     }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:timetodo/time_utils.dart';
+import 'package:timetodo/widgets/reshape_arc_icon.dart';
 
 class TaskTimeframeField extends StatelessWidget {
   final bool isAllDay;
@@ -34,6 +35,7 @@ class TaskTimeframeField extends StatelessWidget {
         : null;
 
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    final move = onMove;
     return Column(
       children: [
         if (showAllDayToggle && onAllDayChanged != null)
@@ -52,18 +54,14 @@ class TaskTimeframeField extends StatelessWidget {
               value: _rangeLabel(context),
               onTap: () => _pickTimeframe(context),
               onResetTimes: onResetTimes,
-              action: onMove == null
+              action: move == null
                   ? null
-                  : FilledButton.tonalIcon(
-                      onPressed: onMove,
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
-                        minimumSize: const Size(0, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: const Icon(Icons.open_with_rounded, size: 16),
-                      label: const Text('Move'),
+                  : _secondaryAction(
+                      context,
+                      icon: const ReshapeArcIcon(size: 16),
+                      label: 'Reshape',
+                      tooltip: 'Drag the arc on the clock',
+                      onPressed: move,
                     ),
             ),
             if (duration != null)
@@ -126,61 +124,92 @@ class TaskTimeframeField extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
+    final actions = <Widget>[
+      if (action != null) action,
+      if (onResetTimes != null)
+        _secondaryAction(
+          context,
+          icon: const Icon(Icons.restart_alt_rounded, size: 16),
+          label: 'Reset',
+          tooltip: 'Reset to task time',
+          onPressed: onResetTimes,
+        ),
+    ];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: InkWell(
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Icon(icon, size: 18, color: muted),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: muted,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (action != null) action,
-          if (onResetTimes != null)
-            IconButton(
-              tooltip: 'Reset to task time',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(
-                minWidth: 32,
-                minHeight: 32,
-              ),
-              icon: const Icon(Icons.restart_alt_rounded, size: 18),
-              onPressed: onResetTimes,
-            ),
           InkWell(
             onTap: onTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-              child: Text(
-                value,
-                textAlign: TextAlign.end,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: muted),
+                  const SizedBox(width: 10),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: theme.textTheme.bodyLarge?.copyWith(color: muted),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      value,
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                ],
               ),
             ),
           ),
+          // Secondary actions get their own line so they never squeeze the
+          // label or the time range on narrow screens.
+          if (actions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 22),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 4,
+                runSpacing: 4,
+                children: actions,
+              ),
+            ),
         ],
+      ),
+    );
+  }
+
+  Widget _secondaryAction(
+    BuildContext context, {
+    required Widget icon,
+    required String label,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Tooltip(
+      message: tooltip,
+      child: TextButton.icon(
+        onPressed: onPressed,
+        icon: icon,
+        label: Text(label),
+        style: TextButton.styleFrom(
+          foregroundColor: muted,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.fromLTRB(8, 0, 10, 0),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       ),
     );
   }
