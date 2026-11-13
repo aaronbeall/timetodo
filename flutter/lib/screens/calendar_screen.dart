@@ -121,7 +121,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       case _CalSpan.day:
         return day;
       case _CalSpan.week:
-        return day.subtract(Duration(days: day.weekday % 7));
+        return addDays(day, -(day.weekday % 7));
       case _CalSpan.month:
         return DateTime(day.year, day.month, 1);
       case _CalSpan.year:
@@ -135,9 +135,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     switch (_span) {
       case _CalSpan.schedule:
       case _CalSpan.day:
-        return o.add(Duration(days: n));
+        return addDays(o, n);
       case _CalSpan.week:
-        return o.add(Duration(days: 7 * n));
+        return addDays(o, 7 * n);
       case _CalSpan.month:
         return DateTime(o.year, o.month + n, 1);
       case _CalSpan.year:
@@ -151,9 +151,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     switch (_span) {
       case _CalSpan.schedule:
       case _CalSpan.day:
-        return _pageCenter + a.difference(o).inDays;
+        return _pageCenter + daysBetween(o, a);
       case _CalSpan.week:
-        return _pageCenter + a.difference(o).inDays ~/ 7;
+        return _pageCenter + daysBetween(o, a) ~/ 7;
       case _CalSpan.month:
         return _pageCenter + (a.year - o.year) * 12 + a.month - o.month;
       case _CalSpan.year:
@@ -302,9 +302,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   List<DateTime> _weekDays() {
-    final start = dateOnly(_focus)
-        .subtract(Duration(days: dateOnly(_focus).weekday % 7));
-    return List.generate(7, (i) => start.add(Duration(days: i)));
+    final start = addDays(dateOnly(_focus), -(dateOnly(_focus).weekday % 7));
+    return List.generate(7, (i) => addDays(start, i));
   }
 
   String _periodTitle() {
@@ -361,9 +360,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     switch (_span) {
       case _CalSpan.schedule:
       case _CalSpan.day:
-        return from.add(Duration(days: direction));
+        return addDays(from, direction);
       case _CalSpan.week:
-        return from.add(Duration(days: 7 * direction));
+        return addDays(from, 7 * direction);
       case _CalSpan.month:
         return DateTime(from.year, from.month + direction, 1);
       case _CalSpan.year:
@@ -754,9 +753,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _weekView(TaskProvider provider, DateTime focus) {
-    final start = dateOnly(focus)
-        .subtract(Duration(days: dateOnly(focus).weekday % 7));
-    final days = List.generate(7, (i) => start.add(Duration(days: i)));
+    final start = addDays(dateOnly(focus), -(dateOnly(focus).weekday % 7));
+    final days = List.generate(7, (i) => addDays(start, i));
     final perDay = [for (final d in days) provider.scheduledOn(d)];
     const hourHeight = 28.0;
     final axisMarks = spaceAxisMarks(

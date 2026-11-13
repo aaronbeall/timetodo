@@ -52,7 +52,7 @@ class TaskListItem extends StatelessWidget {
       calendarList ? task.isCanceled : (_isDone || _isMissed);
 
   DateTime _onDate(TimeOfDay time, {int extraDays = 0}) {
-    final day = dateOnly(date).add(Duration(days: extraDays));
+    final day = addDays(dateOnly(date), extraDays);
     return DateTime(day.year, day.month, day.day, time.hour, time.minute);
   }
 
@@ -105,7 +105,7 @@ class TaskListItem extends StatelessWidget {
   String _relativeTimeLabel() {
     if (_isAllDay) {
       if (!calendarList) return 'All day';
-      final days = dateOnly(date).difference(dateOnly(DateTime.now())).inDays;
+      final days = daysBetween(DateTime.now(), date);
       if (days == 0) return '';
       if (days == 1) return 'tomorrow';
       if (days == -1) return 'yesterday';

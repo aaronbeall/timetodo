@@ -62,7 +62,7 @@ Related About copy already promises export/share as user-initiated (`flutter/lib
 
 ## Quality
 
-- [ ] Real test suite (only a smoke `widget_test.dart`; polar packing, eras, and occurrence edits are untested)
+- [x] Core test suite: eras and repeat rules, polar track packing, occurrence edits ("this and later"), stats, date-aware status. Run once with `TZ=America/New_York flutter test` too: the DST cases only bite in a DST time zone
 - [ ] Polar clock: `shouldRepaint` uses list identity; rebuilds more than needed
 - [ ] Confirm empty-day / packed-day demos stay in sync with the current model (eras, 12h polar)
 

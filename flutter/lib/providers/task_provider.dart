@@ -144,7 +144,7 @@ class TaskProvider extends ChangeNotifier {
     }
 
     if (last.isOpen && last.repeatType != RepeatType.none) {
-      final closed = newFrom.subtract(const Duration(days: 1));
+      final closed = addDays(newFrom, -1);
       if (!closed.isBefore(last.from)) {
         eras[eras.length - 1] = last.copyWith(to: closed);
       }
@@ -255,7 +255,7 @@ class TaskProvider extends ChangeNotifier {
         final old = _tasks[index];
         final eras = [...old.eras];
         if (eras.last.isOpen) {
-          final closed = incoming.from.subtract(const Duration(days: 1));
+          final closed = addDays(incoming.from, -1);
           if (!closed.isBefore(eras.last.from)) {
             eras[eras.length - 1] = eras.last.copyWith(to: closed);
           }
@@ -490,7 +490,7 @@ class TaskProvider extends ChangeNotifier {
           ),
         );
       }
-      cursor = cursor.add(const Duration(days: 1));
+      cursor = addDays(cursor, 1);
     }
 
     final incoming = task.currentEra.copyWith(
@@ -577,11 +577,11 @@ class TaskProvider extends ChangeNotifier {
       final items = scheduledOn(cursor);
       if (items.isEmpty) {
         if (streak == 0 && i == 0) {
-          cursor = cursor.subtract(const Duration(days: 1));
+          cursor = addDays(cursor, -1);
           continue;
         }
         if (streak == 0) {
-          cursor = cursor.subtract(const Duration(days: 1));
+          cursor = addDays(cursor, -1);
           continue;
         }
         break;
@@ -590,7 +590,7 @@ class TaskProvider extends ChangeNotifier {
           items.every((t) => t.isCompleted || t.isCanceled);
       if (!resolved) break;
       streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
+      cursor = addDays(cursor, -1);
     }
     return streak;
   }
@@ -606,13 +606,13 @@ class TaskProvider extends ChangeNotifier {
       final start = dateOnly(task.firstFrom);
       if (start.isBefore(earliest)) earliest = start;
     }
-    if (today.difference(earliest).inDays > 730) {
-      earliest = today.subtract(const Duration(days: 730));
+    if (daysBetween(earliest, today) > 730) {
+      earliest = addDays(today, -730);
     }
 
     for (var cursor = earliest;
         !cursor.isAfter(today);
-        cursor = cursor.add(const Duration(days: 1))) {
+        cursor = addDays(cursor, 1)) {
       for (final item in scheduledOn(cursor)) {
         if (item.isCompleted) {
           completed++;
@@ -626,11 +626,11 @@ class TaskProvider extends ChangeNotifier {
 
     final last7 = [
       for (var i = 6; i >= 0; i--)
-        _dayReport(today.subtract(Duration(days: i))),
+        _dayReport(addDays(today, -i)),
     ];
     final last14Rates = [
       for (var i = 13; i >= 0; i--)
-        _dayCompletionRate(today.subtract(Duration(days: i))),
+        _dayCompletionRate(addDays(today, -i)),
     ];
 
     final streaks = activeTasks
@@ -694,10 +694,10 @@ class TaskProvider extends ChangeNotifier {
     if (last.isBefore(cursor)) {
       return const TaskSeriesStats(total: 0, completed: 0, skipped: 0);
     }
-    if (last.difference(cursor).inDays > 730) {
-      cursor = last.subtract(const Duration(days: 730));
+    if (daysBetween(cursor, last) > 730) {
+      cursor = addDays(last, -730);
     }
-    for (; !cursor.isAfter(last); cursor = cursor.add(const Duration(days: 1))) {
+    for (; !cursor.isAfter(last); cursor = addDays(cursor, 1)) {
       if (!_appearsOn(task, cursor)) continue;
       total++;
       final o = _occurrence(task.id, cursor);
@@ -731,18 +731,18 @@ class TaskProvider extends ChangeNotifier {
       final item = _occurrenceOnLineage(task, cursor);
       if (item == null) {
         if (streak == 0 && i == 0) {
-          cursor = cursor.subtract(const Duration(days: 1));
+          cursor = addDays(cursor, -1);
           continue;
         }
         if (streak == 0) {
-          cursor = cursor.subtract(const Duration(days: 1));
+          cursor = addDays(cursor, -1);
           continue;
         }
         break;
       }
       if (!item.isCompleted && !item.isCanceled) break;
       streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
+      cursor = addDays(cursor, -1);
     }
     return streak;
   }
