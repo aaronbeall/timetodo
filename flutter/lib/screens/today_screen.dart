@@ -14,6 +14,7 @@ import 'package:timetodo/widgets/polar_clock.dart';
 import 'package:timetodo/widgets/task_list_item.dart';
 import 'package:timetodo/widgets/add_task_dialog.dart';
 import 'package:timetodo/widgets/change_toast.dart';
+import 'package:timetodo/widgets/dismissible_hint_tooltip.dart';
 import 'package:timetodo/widgets/flip_host.dart';
 import 'package:timetodo/widgets/task_summary_sheet.dart';
 
@@ -37,6 +38,8 @@ class _TodayScreenState extends State<TodayScreen> {
   TimeOfDay _currentTime = TimeOfDay.now();
   DateTime _currentDate = DateTime.now();
   String? _movingTaskId;
+  /// True when the current move began from the sheet's Reshape button.
+  bool _moveFromButton = false;
   final _scrollController = ScrollController();
   final _fanKey = GlobalKey();
   final _fanT = ValueNotifier(0.0);
@@ -61,6 +64,8 @@ class _TodayScreenState extends State<TodayScreen> {
       });
     });
     _scrollController.addListener(_updateFanFromScroll);
+    HintPrefs.dismissed(DismissibleHintTooltip.reshapeLongPressKey)
+        .addListener(_onHintChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _updateFanFromScroll();
     });
@@ -69,6 +74,8 @@ class _TodayScreenState extends State<TodayScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    HintPrefs.dismissed(DismissibleHintTooltip.reshapeLongPressKey)
+        .removeListener(_onHintChanged);
     _scrollController.removeListener(_updateFanFromScroll);
     _fanT.dispose();
     _fanTail.dispose();
@@ -134,7 +141,7 @@ class _TodayScreenState extends State<TodayScreen> {
     final secondary = base.copyWith(
       fontSize: primarySize * 0.62,
       fontWeight: FontWeight.w400,
-      color: onSurface.withOpacity(0.4),
+      color: onSurface.withValues(alpha: 0.4),
       height: 1.15,
       letterSpacing: 0.15,
     );
@@ -267,6 +274,12 @@ class _TodayScreenState extends State<TodayScreen> {
     return slack + travel * (1 - t);
   }
 
+  // The reserved space under the clock depends on whether the reshape tip is
+  // visible, so rebuild when it loads or is dismissed.
+  void _onHintChanged() {
+    if (mounted) setState(() {});
+  }
+
   void _showSummary(ScheduledTask task) {
     final canMove = !task.isAllDay &&
         task.startTime != null &&
@@ -278,7 +291,10 @@ class _TodayScreenState extends State<TodayScreen> {
       onEdit: () => widget.onEditTask?.call(task.task),
       onMove: canMove
           ? () {
-              setState(() => _movingTaskId = task.id);
+              setState(() {
+                _movingTaskId = task.id;
+                _moveFromButton = true;
+              });
               _scrollToTop();
             }
           : null,
@@ -451,9 +467,15 @@ class _TodayScreenState extends State<TodayScreen> {
               );
               const frameInset = 5.0;
               const pipPad = 12.0;
-              final spacerHeight = maxClock +
-                  16 +
-                  (_movingTaskId != null ? PolarClock.moveActionsExtent : 0);
+              // Cancel/Save (and the tip) sit under the clock while moving;
+              // reserve their height and include it when centering.
+              final controlsExtent = _movingTaskId != null
+                  ? PolarClock.moveControlsExtent(
+                      context,
+                      reshapeHint: _moveFromButton,
+                    )
+                  : 0.0;
+              final spacerHeight = maxClock + 16 + controlsExtent;
               final hasConnector =
                   (active.isNotEmpty || allDayOpen.isNotEmpty) &&
                       fanTasks.isNotEmpty;
@@ -583,7 +605,7 @@ class _TodayScreenState extends State<TodayScreen> {
                               (constraints.maxWidth - size - bezel) / 2;
                           final centeredTop = math.max(
                             0.0,
-                            (remaining - size - bezel) / 2,
+                            (remaining - size - bezel - controlsExtent) / 2,
                           );
                           final top = centeredTop +
                               (pipPad - centeredTop) * frameT;
@@ -603,13 +625,13 @@ class _TodayScreenState extends State<TodayScreen> {
                                     ),
                                     border: Border.all(
                                       color: theme.colorScheme.onSurface
-                                          .withOpacity(0.18 * frameT),
+                                          .withValues(alpha: 0.18 * frameT),
                                       width: 1.5 * frameT,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
                                         color: Colors.black
-                                            .withOpacity(0.22 * frameT),
+                                            .withValues(alpha: 0.22 * frameT),
                                         blurRadius: 18 * frameT,
                                         offset: Offset(0, 6 * frameT),
                                       ),
@@ -641,11 +663,12 @@ class _TodayScreenState extends State<TodayScreen> {
                                               enableMove: !docked ||
                                                   _movingTaskId != null,
                                               movingTaskId: _movingTaskId,
+                                              reshapeHint: _moveFromButton,
                                               onMoveStart: (task) {
-                                                setState(
-                                                  () => _movingTaskId =
-                                                      task.id,
-                                                );
+                                                setState(() {
+                                                  _movingTaskId = task.id;
+                                                  _moveFromButton = false;
+                                                });
                                                 _scrollToTop();
                                               },
                                               onMoveCancel: () => setState(
@@ -699,7 +722,7 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Widget _buildAddTaskGhost(BuildContext context, TaskProvider taskProvider) {
-    final muted = Theme.of(context).colorScheme.onSurface.withOpacity(0.35);
+    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6, top: 4),
       child: Material(
@@ -710,7 +733,7 @@ class _TodayScreenState extends State<TodayScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.04),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
@@ -768,7 +791,7 @@ class _ActiveUpcomingConnector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = Color.alphaBlend(
-      Theme.of(context).colorScheme.onSurface.withOpacity(0.16),
+      Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.16),
       Theme.of(context).scaffoldBackgroundColor,
     );
     return Padding(
@@ -948,7 +971,7 @@ class _UpcomingDeckState extends State<_UpcomingDeck> {
     final dark = brightness == Brightness.dark;
     final opacity = (dark ? 0.16 : 0.045) + depth * (dark ? 0.34 : 0.18);
     return BoxShadow(
-      color: Colors.black.withOpacity(opacity),
+      color: Colors.black.withValues(alpha: opacity),
       blurRadius: 8 + depth * 10,
       offset: Offset(0, 2 + depth * 4),
     );

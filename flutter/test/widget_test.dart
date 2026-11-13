@@ -5,12 +5,9 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
 
 import 'package:timetodo/main.dart';
-import 'package:timetodo/providers/task_provider.dart';
 
 void main() {
   testWidgets('TimeToDo app smoke test', (WidgetTester tester) async {
