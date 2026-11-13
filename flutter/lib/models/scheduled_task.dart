@@ -57,6 +57,57 @@ class ScheduledTask {
     return !isActive(currentTime) && !isUpcoming(currentTime);
   }
 
+  /// When this occurrence starts, as a local date-time on [date].
+  DateTime? get startsAt {
+    final start = startTime;
+    if (start == null) return null;
+    return DateTime(date.year, date.month, date.day, start.hour, start.minute);
+  }
+
+  /// When this occurrence ends. An end earlier than the start runs past
+  /// midnight into the next day (e.g. 10 PM–7 AM).
+  DateTime? get endsAt {
+    final start = startTime;
+    final end = endTime;
+    if (start == null || end == null) return null;
+    final overnight = minutesOf(end) < minutesOf(start);
+    return DateTime(
+      date.year,
+      date.month,
+      date.day + (overnight ? 1 : 0),
+      end.hour,
+      end.minute,
+    );
+  }
+
+  bool get _resolvedOrUntimed =>
+      isAllDay || isCompleted || isCanceled || startTime == null;
+
+  // The time-of-day checks above ([isActive], [isUpcoming], [isMissed]) assume
+  // this occurrence is today's. These compare against a full clock reading,
+  // so they are right for any [date].
+
+  /// Running at [now].
+  bool isActiveAt(DateTime now) {
+    if (_resolvedOrUntimed) return false;
+    final start = startsAt!;
+    final end = endsAt;
+    if (end == null) return false;
+    return !now.isBefore(start) && now.isBefore(end);
+  }
+
+  /// Not started yet at [now].
+  bool isUpcomingAt(DateTime now) {
+    if (_resolvedOrUntimed) return false;
+    return now.isBefore(startsAt!);
+  }
+
+  /// Over at [now] without being completed or skipped.
+  bool isMissedAt(DateTime now) {
+    if (_resolvedOrUntimed) return false;
+    return !isUpcomingAt(now) && !isActiveAt(now);
+  }
+
   static const snoozeGraceMinutes = 15;
 
   int minutesSinceStart(TimeOfDay currentTime) {

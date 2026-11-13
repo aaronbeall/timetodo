@@ -628,27 +628,14 @@ bool _usesFutureStatus(
 _StatusChoice _statusOf(ScheduledTask task, TimeOfDay now) {
   if (task.isCompleted) return _StatusChoice.complete;
   if (task.isCanceled) return _StatusChoice.skipped;
-  // The time-of-day checks below only make sense for today. Without this, a
-  // 3–7 PM occurrence tomorrow reads as "expired" at 8 PM tonight.
-  final today = dateOnly(DateTime.now());
-  final day = dateOnly(task.date);
-  if (day.isAfter(today)) {
-    return task.isAllDay ? _StatusChoice.openAllDay : _StatusChoice.upcoming;
-  }
-  if (day.isBefore(today) && !task.isAllDay && task.startTime != null) {
-    // Yesterday's overnight occurrence (e.g. 10 PM–7 AM) can still be running.
-    final overnight = task.endTime != null &&
-        minutesOf(task.endTime!) < minutesOf(task.startTime!);
-    final yesterday =
-        day == DateTime(today.year, today.month, today.day - 1);
-    final runningOvernight = overnight && yesterday && task.isActive(now);
-    return runningOvernight
-        ? _StatusChoice.inProgress
-        : _StatusChoice.expired;
-  }
-  if (task.isMissed(now)) return _StatusChoice.expired;
-  if (task.isActive(now)) return _StatusChoice.inProgress;
   if (task.isAllDay) return _StatusChoice.openAllDay;
+  // Compare full date-times, not just the time of day, so tomorrow's 3–7 PM
+  // occurrence is upcoming at 8 PM tonight and yesterday's 10 PM–7 AM one is
+  // still in progress at 1 AM.
+  final today = DateTime.now();
+  final at = DateTime(today.year, today.month, today.day, now.hour, now.minute);
+  if (task.isMissedAt(at)) return _StatusChoice.expired;
+  if (task.isActiveAt(at)) return _StatusChoice.inProgress;
   return _StatusChoice.upcoming;
 }
 

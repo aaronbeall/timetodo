@@ -11,6 +11,24 @@ String dateKey(DateTime date) {
 
 bool isSameDay(DateTime a, DateTime b) => dateOnly(a) == dateOnly(b);
 
+/// [date]'s calendar day moved by [days], at local midnight.
+///
+/// Use this instead of `add(Duration(days: n))` on local dates: across a DST
+/// change a day is 23 or 25 hours long, so adding 24h can land on the same day
+/// again or skip past midnight.
+DateTime addDays(DateTime date, int days) =>
+    DateTime(date.year, date.month, date.day + days);
+
+/// Whole calendar days from [from] to [to] (negative if [to] is earlier).
+///
+/// `to.difference(from).inDays` undercounts by one when the span crosses a
+/// spring-forward DST change, so compare the dates in UTC instead.
+int daysBetween(DateTime from, DateTime to) {
+  final a = DateTime.utc(from.year, from.month, from.day);
+  final b = DateTime.utc(to.year, to.month, to.day);
+  return b.difference(a).inDays;
+}
+
 int minutesOf(TimeOfDay time) => time.hour * 60 + time.minute;
 
 TimeOfDay timeFromMinutes(int minutes) {
@@ -113,7 +131,7 @@ String dayOrdinal(int day) {
 }
 
 Color taskWash(Color color, Color onto, [double opacity = 0.12]) {
-  return Color.alphaBlend(color.withOpacity(opacity), onto);
+  return Color.alphaBlend(color.withValues(alpha: opacity), onto);
 }
 
 Color taskInkColor(Color base, Brightness brightness) {

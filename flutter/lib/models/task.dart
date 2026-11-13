@@ -70,7 +70,7 @@ class TaskEra {
     if (!covers(date)) return false;
     if (repeatType == RepeatType.none) return false;
     final day = dateOnly(date);
-    final daysDiff = day.difference(from).inDays;
+    final daysDiff = daysBetween(from, day);
     switch (repeatType) {
       case RepeatType.none:
         return false;
